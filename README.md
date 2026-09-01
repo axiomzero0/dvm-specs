@@ -15,6 +15,7 @@ compliance. There are no exceptions.
 
 | # | Document | Subsystem | Status |
 |---|----------|----------|--------|
+| 0 | [Mandatory Agent Review for Rule Compliance](docs/Mandatory-Agent-Review-Rule.md) | Cross-cutting / Process | Stable |
 | 1 | [DVM Compiler Laws & Architecture Specification](docs/DVM-Compiler-Laws.md) | Cross-cutting / Foundational | Stable |
 | 2 | [DVM Deoptimization and FrameState Machinery](docs/DVM-Deopt-FrameState.md) | Deopt / Speculation Safety | Stable |
 | 3 | [DVM Hybrid Tracing Architecture](docs/DVM-Hybrid-Tracing-Architecture.md) | Tiering / Meta-Tracing | Stable |
@@ -24,6 +25,9 @@ compliance. There are no exceptions.
 
 If you are reading these specs for the first time, the recommended order is:
 
+0. **Mandatory Agent Review for Rule Compliance** — the process rule that
+   governs every artifact produced in this repo. Every other document is
+   subject to it.
 1. **DVM Compiler Laws** — establishes the universal rules (DVM Rules 1–112)
    that every other subsystem must satisfy.
 2. **DVM Hybrid Tracing Architecture** — describes the four-tier execution
