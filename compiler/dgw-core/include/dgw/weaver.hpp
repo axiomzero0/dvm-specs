@@ -58,7 +58,13 @@ class Weaver {
   NodeId create_load(NodeId ctrl, NodeId mem, NodeId ref_value);
   NodeId create_store(NodeId ctrl, NodeId mem, NodeId ref_value, NodeId value);
   NodeId create_call(SymbolId target, CallConv conv,
-                     std::uint16_t arg_count, bool can_throw);
+                     std::uint16_t arg_count, bool can_throw,
+                     NodeId ctrl, NodeId mem);
+
+  // Connect argument #i (zero-indexed) of a CALL node to the given VALUE.
+  // The CALL's port layout is: [0]=CONTROL, [1]=MEMORY, [2+i]=VALUE arg i.
+  // Use after create_call() to fill in each argument.
+  void call_connect_arg(NodeId call_node, std::uint16_t arg_index, NodeId value);
   NodeId create_branch(NodeId ctrl, NodeId cond);
   NodeId create_join(std::uint16_t n_inputs);  // n_inputs control + n_inputs value
   NodeId create_state();
@@ -120,12 +126,19 @@ class Weaver {
   //   ** Complexity: O(1) ** (spec Part 5.2).
   void forward_node(NodeId old_node, NodeId new_node);
 
-  // 5.3  splice_into_edge(edge, new_node, new_node_in_port, new_node_out_port):
+  // 5.3  splice_into_edge(edge, dst, dst_port, new_node, new_node_in_port, new_node_out_port):
   //   Insert `new_node` into the middle of `edge`: the edge's source now
   //   feeds new_node's input port `new_node_in_port`, and new_node's output
-  //   port `new_node_out_port` feeds the edge's original target input port.
-  //   O(1).
+  //   port `new_node_out_port` feeds `dst`'s input port `dst_port`.
+  //
+  //   The caller supplies (dst, dst_port) so the Weaver does not need to scan
+  //   the arena to find the edge's destination (which would be O(N*P)).
+  //   With the dst supplied, this operation is **O(1)** per spec Part 5.3.
+  //
+  //   Precondition: `edge` is currently connected to (dst, dst_port). The
+  //   Weaver asserts this in debug builds.
   void splice_into_edge(EdgeId edge,
+                        NodeId dst, PortId dst_port,
                         NodeId new_node,
                         PortId new_node_in_port,
                         PortId new_node_out_port);
@@ -188,6 +201,11 @@ class Weaver {
 
   GraphArena* arena_;
   std::string_view last_error_{};
+
+  // Free-list of dead node slots, populated by reclaim_dead_nodes and
+  // consumed by create_node. Each entry is the NodeId of a DEAD node whose
+  // port array is still allocated and may be reused.
+  std::vector<NodeId> node_free_list_{};
 };
 
 }  // namespace dgw

@@ -9,10 +9,15 @@ CXX      := g++
 CXXSTD   := -std=c++26
 WARN     := -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wnoexcept -Wundef -Werror=return-type
 OPT      := -O2 -g
-SAN      := # empty by default; `make SAN=1` enables UBSan+ASan
+# `make SAN=1` enables UBSan + ASan.
+ifeq ($(SAN),1)
+SAN_FLAGS := -fsanitize=address,undefined -fno-omit-frame-pointer
+else
+SAN_FLAGS :=
+endif
 CPPFLAGS := -Iinclude
-CXXFLAGS := $(CXXSTD) $(WARN) $(OPT) $(SAN) $(EXTRA_CXXFLAGS)
-LDFLAGS  := $(SAN)
+CXXFLAGS := $(CXXSTD) $(WARN) $(OPT) $(SAN_FLAGS) $(EXTRA_CXXFLAGS)
+LDFLAGS  := $(SAN_FLAGS)
 
 # Sources & objects
 SRCDIR   := src

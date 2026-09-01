@@ -37,8 +37,8 @@ struct MachineOp {
 
 struct MachinePhi {
   NodeId origin;          // JOIN/STATE this PHI came from.
-  std::vector<NodeId> incomings;  // One per predecessor block, in order.
-  std::vector<NodeId> block_ids; // Block each incoming comes from.
+  std::vector<NodeId> incomings;          // One per predecessor block, in order.
+  std::vector<std::uint32_t> block_ids;    // Block each incoming comes from.
 };
 
 struct MachineBasicBlock {

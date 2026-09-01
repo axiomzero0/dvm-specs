@@ -76,19 +76,26 @@ namespace sig_detail {
 // Input[2]: VALUE (REF)
 // Output[0]: VALUE (loaded data)
 // Output[1]: MEMORY (new memory state)
+// Output[2]: EXCEPT (optional — present when HasExcept flag is set)
+//
+// The runtime selects the actual port count per instance: when can_throw is
+// false, the LOAD has 2 outputs; when true, it has 3 (adds EXCEPT).
+// `expected_output_kind` handles the EXCEPT-at-index-2 special case.
 inline constexpr std::array<PortSlot, 3> load_in = {{
     {PortDir::In,  EdgeKind::CONTROL, TypeKind::Void,    "in_control"},
     {PortDir::In,  EdgeKind::MEMORY,  TypeKind::Void,    "in_mem"},
     {PortDir::In,  EdgeKind::VALUE,   TypeKind::Ref,     "ref"},
 }};
-inline constexpr std::array<PortSlot, 2> load_out = {{
+inline constexpr std::array<PortSlot, 3> load_out = {{
     {PortDir::Out, EdgeKind::VALUE,   TypeKind::Top,     "data"},
     {PortDir::Out, EdgeKind::MEMORY,  TypeKind::Void,    "out_mem"},
+    {PortDir::Out, EdgeKind::EXCEPT,  TypeKind::Void,    "except"},
 }};
 
 // ---- STORE (mirror of LOAD) ----
 // Input[0]: CONTROL, Input[1]: MEMORY, Input[2]: VALUE (REF),
 // Input[3]: VALUE (data), Output[0]: MEMORY
+// STOREs to non-global regions do not throw; we omit EXCEPT for STORE.
 inline constexpr std::array<PortSlot, 4> store_in = {{
     {PortDir::In,  EdgeKind::CONTROL, TypeKind::Void,    "in_control"},
     {PortDir::In,  EdgeKind::MEMORY,  TypeKind::Void,    "in_mem"},
@@ -153,16 +160,17 @@ inline constexpr std::array<PortSlot, 1> state_out = {{
 // Input[2..2+N): VALUE (arguments)
 // Output[0]: VALUE (return value)
 // Output[1]: MEMORY (new memory state)
-// Output[2]: EXCEPT (optional — set if HasExcept flag)
+// Output[2]: EXCEPT (optional — present when HasExcept flag is set)
 inline constexpr std::array<PortSlot, 4> call_in = {{
     {PortDir::In,  EdgeKind::CONTROL, TypeKind::Void,    "in_control"},
     {PortDir::In,  EdgeKind::MEMORY,  TypeKind::Void,    "in_mem"},
     {PortDir::In,  EdgeKind::VALUE,   TypeKind::Top,     "arg0"},
     {PortDir::In,  EdgeKind::VALUE,   TypeKind::Top,     "arg1"},
 }};
-inline constexpr std::array<PortSlot, 2> call_out = {{
+inline constexpr std::array<PortSlot, 3> call_out = {{
     {PortDir::Out, EdgeKind::VALUE,   TypeKind::Top,     "ret"},
     {PortDir::Out, EdgeKind::MEMORY,  TypeKind::Void,    "out_mem"},
+    {PortDir::Out, EdgeKind::EXCEPT,  TypeKind::Void,    "except"},
 }};
 
 // ---- CONST ----

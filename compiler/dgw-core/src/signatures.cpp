@@ -101,9 +101,10 @@ bool matches_signature(NodeKind k, std::uint16_t actual_in_count,
              (actual_in_count % 2) == 0 &&
              actual_out_count == sig_out;
     case NodeKind::CALL:
-      // CALL: >= 4 (control + mem + 2 args); out: 2 (ret + mem) or 3 (with EXCEPT).
-      return actual_in_count >= sig_in &&
-             (actual_out_count == 2 || actual_out_count == 3);
+      // CALL: canonical sig has 3 outputs (VALUE + MEMORY + EXCEPT) per the
+      // updated signature. The EXCEPT output is always allocated; the
+      // HasExcept flag controls whether the port is connected.
+      return actual_in_count >= sig_in && actual_out_count == sig_out;
     case NodeKind::STATE:
       // STATE: >= 2 (init + backedge), in/out must match (one value per loop var).
       return actual_in_count >= 2 && (actual_in_count % 2) == 0 &&
@@ -131,8 +132,7 @@ EdgeKind expected_input_kind(NodeKind k, std::uint16_t idx) noexcept {
 EdgeKind expected_output_kind(NodeKind k, std::uint16_t idx) noexcept {
   const auto s = signature_of(k);
   if (idx < s.outputs.size()) return s.outputs[idx].kind;
-  // Variadic tail: for CALL, the optional EXCEPT output (port 2).
-  if (k == NodeKind::CALL && idx == 2) return EdgeKind::EXCEPT;
+  // Variadic tail: CALL has no extra outputs beyond the canonical 3.
   return EdgeKind::VALUE;
 }
 
