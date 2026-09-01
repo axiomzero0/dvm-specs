@@ -58,7 +58,11 @@ int main() {
 
   // ---- Build the graph -----------------------------------------------
   NodeId start = w.create_start();
-  NodeId alloc = w.create_alloc(RegionKind::HEAP, 16, 8);
+  // ALLOC creates a region (RegionId 0) and an ALLOC node that the rest
+  // of the graph references via ref0. We do not need to bind the ALLOC's
+  // NodeId locally — the region is created inside the Weaver's arena and
+  // is reachable via the REF node's payload below.
+  w.create_alloc(RegionKind::HEAP, 16, 8);
   NodeId ref0  = w.create_ref(/*region=*/RegionId{0}, /*offset=*/0, AccessPerm::ReadWrite);
   NodeId c42   = w.create_const(static_cast<std::int64_t>(42));
   NodeId c1a   = w.create_const(static_cast<std::int64_t>(1));
@@ -73,12 +77,11 @@ int main() {
 
   // Two ADDs with the same shape — the second should be GVN'd into the first.
   // Both use the SAME inputs (load, c1a) so they hash identically and the
-  // second is eliminated.
+  // second is eliminated. We do not bind the second ADD to a local — the
+  // node exists in the Weaver's arena (where GVN will find it) and the
+  // test does not need to refer to it after creation.
   NodeId add1 = w.create_arith(NodeKind::ADD, load, c1a);
-  NodeId add2 = w.create_arith(NodeKind::ADD, load, c1a);  // identical to add1
-  (void)add2;  // will be killed by GVN
-
-  (void)alloc;  // graph retains the ALLOC node; binding suppresses unused warning
+  w.create_arith(NodeKind::ADD, load, c1a);  // identical to add1; GVN eliminates this
 
   // GUARD: cond=true. We use a CONST boolean 1.
   NodeId cond_true = w.create_const(static_cast<std::int64_t>(1));

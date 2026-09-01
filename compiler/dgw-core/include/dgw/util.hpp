@@ -71,7 +71,9 @@ inline void dgw_assert(bool cond, std::string_view msg,
 #if DGW_ALWAYS_VERIFY
   if (!cond) panic(msg, loc);
 #else
-  (void)cond; (void)msg; (void)loc;
+  // In release builds with DGW_ALWAYS_VERIFY=0, the assertion is a no-op.
+  // The unused-parameter warning is suppressed Makefile-wide via
+  // -Wno-unused-parameter; no per-cast (void) suppression needed here.
 #endif
 }
 

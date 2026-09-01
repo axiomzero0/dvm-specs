@@ -124,7 +124,6 @@ struct GraphArena {
   // Convenience: read a node's port slot --------------------------------
   // Returns kNullEdge if the port is not connected.
   EdgeId port_edge(NodeId n, PortId p) const {
-    DGW_ALWAYS_VERIFY ? (void)0 : (void)0;
     if (!node_in_bounds(n)) return EdgeId{};
     const auto off = node_port_offset[n.value];
     const auto cnt = node_port_count[n.value];
