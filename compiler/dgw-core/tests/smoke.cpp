@@ -174,7 +174,7 @@ int main() {
   std::println("route_except_to: ok (edge id={})",
                static_cast<std::uint32_t>(ce.value));
   // Wire HANDLER's control output to a RETURN so the graph is observable.
-  NodeId ret2 = w2.create_return(handler, c2);
+  w2.create_return(handler, c2);
 
   std::println("Test 2 graph: {} nodes, {} edges",
                g2.arena().node_count(), g2.arena().edge_count());
@@ -193,12 +193,16 @@ int main() {
   NodeId s3 = w3.create_start();
   NodeId c3 = w3.create_const(std::int64_t{1});
   NodeId br = w3.create_branch(s3, c3);
-  NodeId true_ret = w3.create_return(br, c3);
+  // First RETURN: BRANCH's TRUE output (port in_count + 0) is auto-wired
+  // to this return by create_return -> connect_control. We do NOT need to
+  // bind it to a local — the test uses only the second return below.
+  w3.create_return(br, c3);
+  // Second RETURN: needs an explicit name so we can wire BRANCH's FALSE
+  // output (port in_count + 1) to it.
   NodeId false_ret = w3.create_return(br, c3);
-  // Wire BRANCH's true output to one RETURN, false to the other.
+  // Wire BRANCH's FALSE output to false_ret. (BRANCH's TRUE output is
+  // already auto-wired to the first RETURN above by create_return.)
   // BRANCH's true output is at port in_count + 0; false at in_count + 1.
-  // create_return(br, c3) wired BRANCH's first CONTROL output (true) to true_ret.
-  // We need to wire BRANCH's FALSE output to false_ret.
   {
     const NodeSignature bs = signature_of(NodeKind::BRANCH);
     const std::uint16_t in_count = static_cast<std::uint16_t>(bs.inputs.size());
@@ -236,7 +240,7 @@ int main() {
   w4.connect_value(c4_init, state, PortId{0});        // init
   w4.connect_value(state, state, PortId{1});          // backedge (toy loop)
   // An ALLOC + REF + STORE outside the loop (well, before it conceptually).
-  NodeId alloc4 = w4.create_alloc(RegionKind::STACK, 8, 8);
+  w4.create_alloc(RegionKind::STACK, 8, 8);
   NodeId ref4   = w4.create_ref(RegionId{0}, 0, AccessPerm::ReadOnly);
   NodeId c4_val = w4.create_const(std::int64_t{99});
   NodeId store4 = w4.create_store(s4, s4, ref4, c4_val);  // memory chain
@@ -249,7 +253,7 @@ int main() {
   NodeId load4 = w4.create_load(s4, store4, ref4);
   // Add the LOAD to the loop body by using it: ADD(state, load4).
   NodeId add4 = w4.create_arith(NodeKind::ADD, state, load4);
-  NodeId ret4 = w4.create_return(s4, add4);
+  w4.create_return(s4, add4);
 
   // Run LICM. We expect it to identify the STATE node and count the LOAD
   // as hoistable (its VALUE input ref4 is outside the body, and the LOAD
@@ -291,7 +295,7 @@ int main() {
   NodeId add_b = w4b.create_arith(NodeKind::ADD, ca, cb);
   // Use the ADD inside the loop body: state_b + add_b.
   NodeId add2_b = w4b.create_arith(NodeKind::ADD, state_b, add_b);
-  NodeId ret4b = w4b.create_return(s4b, add2_b);
+  w4b.create_return(s4b, add2_b);
 
   LicmStats lsb = pass_licm(w4b);
   std::println("LICM-4b: visited={}, hoisted={}", lsb.visited, lsb.hoisted);
@@ -324,7 +328,7 @@ int main() {
                 trap5, PortId{0}, EdgeKind::CONTROL);
   }
   // Wire GUARD's success port to a RETURN.
-  NodeId ret5 = w5.create_return(guard5, cond5);
+  w5.create_return(guard5, cond5);
 
   // Now: the failure path has ONE consumer (trap5). This satisfies
   // the "exclusively to DEOPT_TRAP" rule. Verify passes.
@@ -409,7 +413,7 @@ int main() {
   w6.connect_value(add6, join6, PortId{2});
   w6.connect_value(sub6, join6, PortId{3});
   // JOIN's value output -> RETURN.
-  NodeId ret6 = w6.create_return(join6, join6);
+  w6.create_return(join6, join6);
 
   MachineCFG cfg6 = schedule_to_cfg(w6, always_true, nullptr);
   std::println("Test 6 CFG: {} block(s)", cfg6.blocks.size());

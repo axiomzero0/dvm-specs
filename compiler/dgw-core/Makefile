@@ -7,7 +7,10 @@
 
 CXX      := g++
 CXXSTD   := -std=c++26
-WARN     := -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wnoexcept -Wundef -Werror=return-type
+# All warnings are errors. No lazy unused-variable suppressions; if a
+# variable is set but not used, either use it or delete it. Being lazy
+# about warnings hides bugs.
+WARN     := -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wnoexcept -Wundef -Werror -Wno-unused-parameter
 OPT      := -O2 -g
 # `make SAN=1` enables UBSan + ASan.
 ifeq ($(SAN),1)
