@@ -7,13 +7,14 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Build artifacts (none expected in a specs repo, but harmless to ignore)
+# Build artifacts
 build/
-out/
+bin/
 *.o
 *.a
 *.so
 *.dylib
+out/
 
 # Secrets — never commit tokens, credentials, or PATs
 .env
