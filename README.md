@@ -20,6 +20,8 @@ compliance. There are no exceptions.
 | 2 | [DVM Deoptimization and FrameState Machinery](docs/DVM-Deopt-FrameState.md) | Deopt / Speculation Safety | Stable |
 | 3 | [DVM Hybrid Tracing Architecture](docs/DVM-Hybrid-Tracing-Architecture.md) | Tiering / Meta-Tracing | Stable |
 | 4 | [DGW-Core IR (Dynamic Graph Web)](docs/DGW-Core-IR.md) | Tier 2 / Tier 3 Optimizing IR | Stable |
+| 5 | [DVM-CRB — Common Register Bytecode](docs/DVM-CRB.md) | Tier 0 Interpreter / Deopt Target | Draft |
+| 6 | [DVM-CR-PEA — Cross-Region Partial Escape Analysis](docs/DVM-CR-PEA.md) | Tier 2 / Tier 3 Pass Pipeline | Draft |
 
 ### Document Dependency Order
 
@@ -30,15 +32,23 @@ If you are reading these specs for the first time, the recommended order is:
    subject to it.
 1. **DVM Compiler Laws** — establishes the universal rules (DVM Rules 1–112)
    that every other subsystem must satisfy.
-2. **DVM Hybrid Tracing Architecture** — describes the four-tier execution
+2. **DVM-CRB — Common Register Bytecode** — the language-neutral
+   register-based bytecode that the Tier 0 interpreter executes and that
+   DGW lifts from / lowers to. This is the stable semantic bytecode and
+   the canonical deopt target.
+3. **DVM Hybrid Tracing Architecture** — describes the four-tier execution
    model (Tier 0–3) and how meta-tracing is mixed with normal tracing for
    higher tiers.
-3. **DGW-Core IR** — the mid-level optimizing IR. Defines the Woven Arena
+4. **DGW-Core IR** — the mid-level optimizing IR. Defines the Woven Arena
    memory layout, port/edge typing system, Memory SSA, Partial Escape
    Analysis, the Weaver mutation API, and trace scheduling/lowering.
-4. **DVM Deopt & FrameState Machinery** — the deoptimization system that lets
+5. **DVM Deopt & FrameState Machinery** — the deoptimization system that lets
    DGW-Core speculate aggressively while preserving exact guest-language
    semantics. Every `GUARD` node in DGW-Core depends on this subsystem.
+6. **DVM-CR-PEA — Cross-Region Partial Escape Analysis** — the cross-region
+   evolution of PEA that virtualizes allocations across inlined call
+   boundaries with lazy materialization. Depends on DGW-Core's first-class
+   `Region`/`Ref` model (Part 3) and the deopt machinery.
 
 ---
 
@@ -47,7 +57,8 @@ If you are reading these specs for the first time, the recommended order is:
 ```
                     ┌────────────────────────────────────────┐
                     │   DVM Compiler Laws (Rules 1–112)      │
-                    │   Universal invariants & CI gates      │
+                    │   Universal invariants & CI gates       │
+                    │   + PEA-X1..X6 (CR-PEA capability gates)│
                     └─────────────────┬──────────────────────┘
                                       │ governs
               ┌───────────────────────┼───────────────────────┐
@@ -57,12 +68,21 @@ If you are reading these specs for the first time, the recommended order is:
    │  (Tier 0 → Tier 3)  │  │   (Woven Arena SoA)  │  │  (Speculation Safe) │
    └─────────┬───────────┘  └──────────┬───────────┘  └──────────┬──────────┘
              │  records traces           │  emits GUARD nodes     │
+             │  on CRB execution         │  + Region/Ref identity │
              └──────────────┬────────────┘────────────────────────┘
                             ▼
                    ┌────────────────────────┐
-                   │  DVM Portable Bytecode  │
-                   │  + Guest Profiles       │
-                   └────────────────────────┘
+                   │  DVM-CRB (Common Register│
+                   │  Bytecode) — Tier 0 exec │
+                   │  + deopt target          │
+                   └────────────┬───────────┘
+                                │ lifted to DGW for Tier 2/3
+                                ▼
+                   ┌────────────────────────────┐
+                   │  DVM-CR-PEA (P-360..P-366)   │
+                   │  Cross-Region PEA + lazy     │
+                   │  materialization             │
+                   └────────────────────────────┘
 ```
 
 ---
@@ -88,7 +108,23 @@ If you are reading these specs for the first time, the recommended order is:
     state observationally indistinguishable from Tier 0.
 *   **PEA** — Partial Escape Analysis. Promoted by the `MATERIALIZE` node
     that converts a `VIRTUAL` region into a real heap pointer only on the
-    paths that actually escape.
+    paths that actually escape. Defined in `DGW-Core-IR.md` Part 3.4.
+*   **CR-PEA** — Cross-Region Partial Escape Analysis. The cross-method
+    evolution of PEA: virtualizes allocations across inlined call boundaries
+    with lazy materialization at the true escape boundary. Runs at Tier 2
+    and Tier 3 as the P-360..P-366 pass pipeline. Gated by the Guest
+    Language Profile's observability capabilities per Rules PEA-X1..X6.
+*   **CRB** — Common Register Bytecode. The language-neutral,
+    fixed-width-64-bit-cell register-based bytecode that the Tier 0
+    interpreter executes, that the trace recorder records from, and that
+    DGW lifts from / lowers to. The canonical deopt target.
+*   **Escape Lattice** — The lattice over `EscapeClass` values
+    (`NonEscape`, `LocalEscape`, `CallerEscape`, `ArgEscape`,
+    `ReturnEscape`, `StoreEscape`, `GlobalEscape`, `NativeEscape`,
+    `IdentityEscape`, `MonitorEscape`, `WeakRefEscape`,
+    `FinalizerEscape`, `IntrospectionEscape`, `SuspensionEscape`,
+    `ThrowableEscape`, `BottomEscape`) used by CR-PEA to classify
+    each region's escape set per context.
 *   **Trace Scheduling** — The Phase-K lowering step that walks `CONTROL`
     edges using PGO probabilities to form linear traces, then groups them
     into `MachineBasicBlock`s for instruction selection.
