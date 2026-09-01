@@ -1,0 +1,25 @@
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Build artifacts (none expected in a specs repo, but harmless to ignore)
+build/
+out/
+*.o
+*.a
+*.so
+*.dylib
+
+# Secrets — never commit tokens, credentials, or PATs
+.env
+.env.*
+*.pem
+*.key
+.git-credentials
+.github_token
+.repo_info.json
