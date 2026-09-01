@@ -694,6 +694,7 @@ Does nothing.
 
 ```text
 opcode: 0x0001
+format: none
 ```
 
 Raises a guest-visible trap or runtime error according to the Guest Language Profile.
@@ -706,6 +707,7 @@ Used for unreachable-but-executed states.
 
 ```text
 opcode: 0x0002
+format: none
 ```
 
 Marks code that should never execute.
@@ -718,6 +720,7 @@ If executed, this is a VM bug or invalid module.
 
 ```text
 opcode: 0x0003
+format: none
 ```
 
 Explicit safepoint.
@@ -730,6 +733,7 @@ Backward branches, calls, and allocations are implicit safepoints.
 
 ```text
 opcode: 0x0004
+format: R_IMM32
 operand: profile_id32
 ```
 
@@ -990,8 +994,8 @@ The overflow-mode indices are:
 ADD_I64_WRAP       = 0x0200 + (0*0x10) + (3*0x04) + 0 = 0x020C
 ADD_I64_CHECKED    = 0x0200 + (0*0x10) + (3*0x04) + 1 = 0x020D
 SUB_I32_WRAP       = 0x0200 + (1*0x10) + (2*0x04) + 0 = 0x0218
-MUL_I32_CHECKED    = 0x0200 + (2*0x10) + (2*0x04) + 1 = 0x0221
-DIV_S_I64_CHECKED  = 0x0200 + (3*0x10) + (3*0x04) + 1 = 0x022D
+MUL_I32_CHECKED    = 0x0200 + (2*0x10) + (2*0x04) + 1 = 0x0229
+DIV_S_I64_CHECKED  = 0x0200 + (3*0x10) + (3*0x04) + 1 = 0x023D
 NEG_I64_WRAP       = 0x0200 + (7*0x10) + (3*0x04) + 0 = 0x027C
 NEG_I64_CHECKED    = 0x0200 + (7*0x10) + (3*0x04) + 1 = 0x027D
 NOT_I64_WRAP       = 0x0200 + (8*0x10) + (3*0x04) + 0 = 0x028C
@@ -1189,9 +1193,12 @@ Branch if condition register is false.
 
 ```text
 opcode: 0x0703
+format: BRANCH
 ```
 
-Branch if register is null.
+Branch if register is null. Same operand layout as `BR_TRUE`/`BR_FALSE`
+(§7.4): `cond_reg` holds the value to test, and `delta32` is the
+branch-target offset.
 
 ---
 
@@ -1199,9 +1206,10 @@ Branch if register is null.
 
 ```text
 opcode: 0x0704
+format: BRANCH
 ```
 
-Branch if register is not null.
+Branch if register is not null. Same operand layout as `BR_NULL` (§15.4).
 
 ---
 
@@ -1256,9 +1264,10 @@ Returns the value in `dst` register.
 
 ```text
 opcode: 0x0801
+format: none
 ```
 
-Returns no value.
+Returns no value. The caller's frame is discarded.
 
 ---
 
@@ -1336,9 +1345,12 @@ Optional extension.
 
 ```text
 opcode: 0x0820
+format: CALL
 ```
 
-Must not increase logical call depth.
+Must not increase logical call depth. Same operand layout as `CALL_DIRECT`
+(§16.3 / §7.6); the difference is that the caller's frame is discarded
+before the callee is entered (tail position).
 
 ---
 
@@ -1570,6 +1582,7 @@ May require GC write barrier.
 
 ```text
 opcode: 0x0A10
+format: R_R_R
 ```
 
 Semantics:
@@ -1578,7 +1591,9 @@ Semantics:
 dst = obj[index]
 ```
 
-Bounds checked by default.
+Bounds checked by default. The three register operands are `dst`,
+`obj`, and `index` (the index register holds an integer index into
+the object's indexed slots).
 
 ---
 
@@ -1586,6 +1601,7 @@ Bounds checked by default.
 
 ```text
 opcode: 0x0A11
+format: R_R_R
 ```
 
 Semantics:
@@ -1594,7 +1610,10 @@ Semantics:
 obj[index] = value
 ```
 
-Bounds checked by default.
+Bounds checked by default. The three register operands are `obj`,
+`index`, and `value` (the index register holds an integer index; the
+value register holds the value to store). May require a GC write
+barrier.
 
 ---
 
@@ -1616,11 +1635,14 @@ Raises guest type exception on failure.
 
 ```text
 opcode: 0x0A21
+format: R_R_IMM32
 ```
 
 Produces boolean.
 
-Does not raise on type mismatch.
+Does not raise on type mismatch. The two register operands are `dst`
+(result boolean) and `src` (object to test); the 32-bit immediate is
+the `type_id` to test against.
 
 ---
 
@@ -1714,10 +1736,13 @@ Optional extension for generators, coroutines, async functions, fibers, and cont
 
 ```text
 opcode: 0x0D00
+format: R_IMM32
 operand: suspension_site_id
 ```
 
-Suspends current execution and returns a value to the resumer.
+Suspends current execution and returns a value to the resumer. The
+`dst` register holds the value to yield; the 32-bit immediate is the
+suspension-site descriptor index.
 
 ---
 
@@ -1725,9 +1750,13 @@ Suspends current execution and returns a value to the resumer.
 
 ```text
 opcode: 0x0D01
+format: R_IMM32
+operand: suspension_site_id
 ```
 
-Suspends waiting for an awaited value.
+Suspends waiting for an awaited value. The `dst` register receives the
+awaited value when execution resumes; the 32-bit immediate is the
+suspension-site descriptor index.
 
 ---
 
