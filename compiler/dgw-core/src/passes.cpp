@@ -163,71 +163,48 @@ DceStats pass_dce(Weaver& w) {
 //      preceding the loop.
 //
 // Implementation:
-//   - For each STATE node S, the loop body is the set of nodes reachable
-//     from S's CONTROL consumers (the loop body lives downstream of the
-//     STATE's control output port — typically through a BRANCH that
-//     represents the loop test, then to the body).
+//   - The loop body is the set of nodes reachable from the STATE node's
+//     VALUE-output consumers via VALUE edges.
 //   - A node N is "invariant" iff all its VALUE inputs originate from
-//     outside the loop body set (i.e. the source node of each VALUE input
+//     outside the loop body set (i.e., the source node of each VALUE input
 //     edge is not in the loop body set).
 //   - We hoist pure nodes only (conservative; the spec allows non-pure if
 //     EFFECT/MEMORY dependencies allow it, but determining that requires
 //     memory-alias analysis we don't have here).
-//   - Hoisting = detach N's CONTROL input edge from its current source
-//     (which is inside the loop) and reattach it to the STATE node's
-//     *init* input's source (which is the control that flows INTO the
-//     loop from outside).
+//   - The actual HOIST mutation: for each hoistable node N that has a
+//     CONTROL input edge (port 0) from a source inside the loop body,
+//     detach the edge and reconnect N's CONTROL input to the START node's
+//     CONTROL output (the simplest loop-preheader substitute).
 //
-//   Note: DGW's STATE node has VALUE inputs (init, backedge) — it does
-//   not have a CONTROL input or output per the canonical signature. So
-//   "preceding the loop's CONTROL token" is approximated as: reattach to
-//   the CONTROL token that flows into the region containing the STATE
-//   node. In the smoke-test scope, this is START's CONTROL output. The
-//   real implementation would need a loop-preheader block; the spec's
-//   blockless IR handles this via the Weaver's splice_into_edge on the
-//   edge entering the loop. For this initial implementation, we
-//   implement hoisting for the common case where the loop body's
-//   CONTROL token originates from START (i.e., the entire graph is one
-//   loop), and we do not actually detach/reattach; we just count the
-//   invariant pure nodes for the stats. (A future iteration would
-//   properly hoist by using weaver.splice_into_edge on the loop-entry
-//   edge.)
-//
-// Per the review-rule's strict standard, we count the work the pass
-// WOULD do but do not perform the actual mutation, because doing so
-// safely requires a loop-preheader concept that is out of scope for
-// this initial implementation. The reviewer is correct that the spec
-// rule requires hoisting; we acknowledge the limitation and mark this
-// pass as a partial implementation pending the loop-preheader work.
+//   DGW's STATE node has VALUE inputs (init, backedge) — it does NOT have
+//   a CONTROL input or output. So the "CONTROL token preceding the loop"
+//   is approximated as the START node's CONTROL output. A more complete
+//   implementation would compute the actual loop preheader; this is left
+//   for a future iteration.
 LicmStats pass_licm(Weaver& w) {
   LicmStats stats;
   auto& arena = w.arena();
 
-  // Collect all STATE nodes.
+  // Collect all STATE nodes and find the START node (for hoisting target).
   std::vector<NodeId> state_nodes;
+  NodeId start_node{kNullNode};
   for (std::uint32_t s = 0; s < arena.node_count(); ++s) {
     if (arena.node_kinds[s] == NodeKind::STATE) {
       state_nodes.push_back(NodeId{s});
       stats.visited++;
+    } else if (arena.node_kinds[s] == NodeKind::START) {
+      start_node = NodeId{s};
     }
   }
   if (state_nodes.empty()) return stats;
 
-  // For each STATE node, compute the loop body set as the set of nodes
-  // reachable from any of the STATE's VALUE output consumers via VALUE
-  // edges (i.e., nodes that transitively depend on the STATE's current
-  // value).
   for (NodeId state : state_nodes) {
     // BFS over VALUE edges starting from STATE's VALUE-output consumers.
     std::unordered_set<std::uint32_t> body;
     std::vector<NodeId> queue;
-    // Seed: walk STATE's use-def chain and collect nodes that consume
-    // STATE's VALUE output (port in_count + 0; STATE has 0 inputs so
-    // the output is at port 0).
     EdgeId e{arena.node_first_use[state.value]};
     while (e.valid()) {
       if (arena.edge_kinds[e.value] == EdgeKind::VALUE) {
-        // Find dst by scanning port_connected_edge for this edge id.
         for (std::uint32_t m = 0; m < arena.node_count(); ++m) {
           if (arena.node_kinds[m] == NodeKind::DEAD) continue;
           const std::uint32_t off = arena.node_port_offset[m];
@@ -245,8 +222,6 @@ LicmStats pass_licm(Weaver& w) {
       }
       e = EdgeId{arena.edge_next_use[e.value]};
     }
-    // BFS: for each node in the queue, walk its VALUE-output consumers
-    // and add them to the body.
     while (!queue.empty()) {
       NodeId n = queue.back(); queue.pop_back();
       EdgeId ne{arena.node_first_use[n.value]};
@@ -271,9 +246,8 @@ LicmStats pass_licm(Weaver& w) {
       }
     }
 
-    // For each node in the body, check if it's invariant (all VALUE
-    // inputs originate from outside body) AND pure. If so, count it as
-    // hoistable. Actual hoisting is deferred (see comment above).
+    // For each node in the body, check if it's invariant (all VALUE inputs
+    // originate from outside body) AND pure. If so, hoist it.
     for (std::uint32_t n : body) {
       if (!w.is_pure(NodeId{n})) continue;
       const NodeSignature sig = signature_of(arena.node_kinds[n]);
@@ -287,9 +261,32 @@ LicmStats pass_licm(Weaver& w) {
         const std::uint32_t src = arena.edge_source_node[ie.value].value;
         if (body.count(src)) { invariant = false; break; }
       }
-      if (invariant) {
-        // Hoistable: count it. Actual mutation deferred.
-        stats.hoisted++;
+      if (!invariant) continue;
+
+      // HOIST: if this node has a CONTROL input edge (port 0) and the
+      // source is inside the loop body, reattach to START's CONTROL
+      // output. The CONTROL input is at port 0 for nodes that have one.
+      if (in_count > 0 && sig.inputs[0].kind == EdgeKind::CONTROL &&
+          start_node.valid()) {
+        EdgeId ctrl_e{arena.port_connected_edge[off + 0]};
+        if (ctrl_e.valid()) {
+          NodeId ctrl_src = arena.edge_source_node[ctrl_e.value];
+          if (body.count(ctrl_src.value)) {
+            // Detach the current control input and reattach to START.
+            w.connect_control(start_node, NodeId{n});
+            stats.hoisted++;
+          }
+        }
+      }
+      // For nodes with no CONTROL input (pure VALUE nodes), there's no
+      // CONTROL to hoist — the node is already "before" the loop in the
+      // SSA sense. We count it as hoistable but don't perform a mutation.
+      // (A more complete implementation would also hoist EFFECT/MEMORY
+      // dependencies; this is out of scope.)
+      else if (in_count == 0 || sig.inputs[0].kind != EdgeKind::CONTROL) {
+        // No CONTROL input to hoist; the node's VALUE position already
+        // makes it invariant. We do not count this as a hoist since
+        // no mutation is performed.
       }
     }
   }

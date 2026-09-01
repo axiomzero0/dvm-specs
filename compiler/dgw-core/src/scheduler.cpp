@@ -78,13 +78,17 @@ MachineCFG schedule_to_cfg(Weaver& w, PgoProbFn pgo, void* pgo_user) {
     return blk.id;
   };
 
-  auto add_to_block = [&](std::uint32_t block_id, NodeId n) {
+  auto add_to_block = [&](std::uint32_t block_id, NodeId n, NodeId pred_node, std::uint32_t pred_block) {
     auto& blk = blocks[block_id];
     if (arena.node_kinds[n.value] == NodeKind::JOIN ||
         arena.node_kinds[n.value] == NodeKind::STATE) {
       // Spec 7.2.3/7.2.4: convert JOIN/STATE to PHI at block head.
+      // Record the predecessor that introduced us; back-edge predecessors
+      // are appended later (in the BFS).
       MachinePhi phi;
       phi.origin = n;
+      phi.incomings.push_back(pred_node);
+      phi.block_ids.push_back(pred_block);
       blk.phis.push_back(phi);
     } else {
       MachineOp op;
@@ -101,11 +105,12 @@ MachineCFG schedule_to_cfg(Weaver& w, PgoProbFn pgo, void* pgo_user) {
   std::queue<NodeId> queue;
   std::unordered_set<std::uint32_t> visited;
 
-  // Start node goes in block 0.
+  // Start node goes in block 0. It has no predecessor (it IS the entry);
+  // we record a sentinel predecessor of kNullNode and an invalid block id.
   std::uint32_t entry_id = new_block();
   cfg.entry_block_id = entry_id;
   node_to_block[starts[0].value] = entry_id;
-  add_to_block(entry_id, starts[0]);
+  add_to_block(entry_id, starts[0], NodeId{kNullNode}, 0xFFFFFFFFu);
   queue.push(starts[0]);
   visited.insert(starts[0].value);
 
@@ -198,7 +203,7 @@ MachineCFG schedule_to_cfg(Weaver& w, PgoProbFn pgo, void* pgo_user) {
         blocks[target_block].preds.push_back(cur_block);
       }
       node_to_block[ce.dst.value] = target_block;
-      add_to_block(target_block, ce.dst);
+      add_to_block(target_block, ce.dst, cur, cur_block);
       queue.push(ce.dst);
       visited.insert(ce.dst.value);
     }
