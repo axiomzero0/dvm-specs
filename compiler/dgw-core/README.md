@@ -19,18 +19,34 @@ compiler/dgw-core/
 │   ├── regions.hpp       # Part 3   — RegionKind / EscapeState / Memory-SSA helpers
 │   ├── control.hpp       # Part 4   — BRANCH / JOIN / STATE / EXCEPT / HANDLER helpers
 │   ├── weaver.hpp        # Part 5   — Weaver (rewire_uses, FWD, splice, kill)
-│   ├── passes.hpp        # Part 6   — GVN / DCE / LICM
+│   ├── pass_gvn.hpp      # Part 6.1 — Global Value Numbering
+│   ├── pass_dce.hpp      # Part 6.2 — Dead Code Elimination
+│   ├── pass_licm.hpp     # Part 6.3 — Loop Invariant Code Motion
+│   ├── pass_cleanup.hpp  # Part 5.2 — FWD-chain CleanupPass
 │   ├── scheduler.hpp     # Part 7   — Trace scheduling + block formation
 │   ├── verifier.hpp      # Part 8   — WebVerifier (4 layers)
 │   ├── graph.hpp         # Top-level Graph facade wrapping GraphArena + Weaver
 │   └── util.hpp          # small helpers (assert, panic, source_location)
-├── src/                # Implementations
-│   └── ...               # one .cpp per header
+├── src/                # Implementations — one .cpp per header, one .cpp per pass
+│   ├── control.cpp
+│   ├── graph.cpp
+│   ├── pass_gvn.cpp      # GVN
+│   ├── pass_dce.cpp      # DCE
+│   ├── pass_licm.cpp     # LICM
+│   ├── pass_cleanup.cpp  # CleanupPass
+│   ├── scheduler.cpp
+│   ├── signatures.cpp
+│   ├── verifier.cpp
+│   └── weaver.cpp
 ├── tests/              # Smoke tests + per-pass tests
-│   ├── smoke.cpp         # end-to-end: build a small graph, run GVN+DCE, verify
+│   ├── smoke.cpp         # end-to-end: build a small graph, run GVN+DCE+Cleanup, verify
 │   └── ...
 └── Makefile            # GNU Make build (no CMake required)
 ```
+
+**Rule:** every pass has its own `.cpp` AND its own `.hpp`. Do not collapse
+multiple passes into a single file — large combined files become
+unmaintainable. New passes go in `pass_<name>.cpp` / `pass_<name>.hpp`.
 
 ## Build
 

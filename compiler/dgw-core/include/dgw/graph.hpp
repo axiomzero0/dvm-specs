@@ -16,7 +16,10 @@
 #include "dgw/arena.hpp"
 #include "dgw/weaver.hpp"
 #include "dgw/verifier.hpp"
-#include "dgw/passes.hpp"
+#include "dgw/pass_gvn.hpp"
+#include "dgw/pass_dce.hpp"
+#include "dgw/pass_licm.hpp"
+#include "dgw/pass_cleanup.hpp"
 #include "dgw/scheduler.hpp"
 #include "dgw/util.hpp"
 

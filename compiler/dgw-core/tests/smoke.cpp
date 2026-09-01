@@ -43,7 +43,7 @@
 #include "dgw/scheduler.hpp"
 #include "dgw/signatures.hpp"
 #include "dgw/control.hpp"
-#include "dgw/passes.hpp"
+#include "dgw/pass_licm.hpp"
 
 using namespace dgw;
 
