@@ -17,7 +17,7 @@ This is the **stable semantic bytecode**.
 
 ---
 
-## 1. Purpose of CRB
+# 1. Purpose of CRB
 
 CRB exists to give DVM a single portable execution format that can represent many guest languages while remaining:
 
@@ -37,9 +37,9 @@ When JIT code deoptimizes, execution must be reconstructible as if CRB were bein
 
 ---
 
-## 2. Core Design Principles
+# 2. Core Design Principles
 
-### 2.1 Register-based, not stack-based
+## 2.1 Register-based, not stack-based
 
 CRB uses virtual registers.
 
@@ -47,7 +47,7 @@ This reduces interpreter traffic, simplifies inline caches, and makes OSR/deopt 
 
 ---
 
-### 2.2 Fixed-width instruction cells
+## 2.2 Fixed-width instruction cells
 
 CRB uses 64-bit instruction words.
 
@@ -62,7 +62,7 @@ This allows:
 
 ---
 
-### 2.3 Language-neutral but guest-profile-aware
+## 2.3 Language-neutral but guest-profile-aware
 
 CRB does not hard-code any guest language semantics.
 
@@ -77,7 +77,7 @@ Guest semantics are supplied by:
 
 ---
 
-### 2.4 Typed where useful, dynamic where necessary
+## 2.4 Typed where useful, dynamic where necessary
 
 CRB supports:
 
@@ -89,7 +89,7 @@ CRB supports:
 
 ---
 
-### 2.5 Verifier-first
+## 2.5 Verifier-first
 
 No CRB module may be executed unless it passes verification.
 
@@ -99,7 +99,7 @@ CRB does not rely on runtime “best effort” validation.
 
 ---
 
-### 2.6 Trace-friendly
+## 2.6 Trace-friendly
 
 Every CRB opcode must have:
 
@@ -588,6 +588,69 @@ switch r3, switch_table(11)
 
 ---
 
+## 7.10 `R`
+
+```text
+opcode | dst | unused | unused
+```
+
+Single-register format. Used for opcodes that operate on exactly one register:
+loading sentinel values (`MOV_NULL`, `MOV_TRUE`, `MOV_FALSE`, `MOV_UNDEF`),
+returning a value (`RET`), throwing an exception (`THROW`).
+
+The `dst` field names the single register that is either loaded or read;
+the two remaining 16-bit slots are reserved (`unused`) and must be zero on
+encode and ignored on decode.
+
+Example:
+
+```text
+mov_null r3       ; r3 := null
+ret r8            ; return r8
+throw r2          ; throw r2
+```
+
+---
+
+## 7.11 `R_R_SITE16`
+
+```text
+opcode | dst | src | site16
+```
+
+Two-register plus 16-bit site-descriptor format. Used for raw memory
+operations that carry an access-site descriptor for runtime checks,
+tracing, and bound recording. The `site16` field is an index into the
+module's Site Table (see §17).
+
+Example:
+
+```text
+load_mem r3, r1, site(7)    ; r3 := *r1 at site #7
+```
+
+---
+
+## 7.12 `R_R_IMM32`
+
+```text
+opcode | dst | src | imm32_low | imm32_high
+```
+
+Two-register plus 32-bit immediate format. Used for opcodes that take
+two register operands plus a 32-bit immediate payload (e.g., a `type_id`
+or `class_id` for checked casts). The 32-bit immediate is split across
+two 16-bit slots in the same little-endian convention as `R_IMM32`
+(§7.3) and `BRANCH` (§7.4).
+
+Example:
+
+```text
+obj_cast_checked r3, r1, type(0x42)   ; r3 := cast r1 to type 0x42
+```
+
+---
+
 # 8. Opcode Space
 
 CRB uses a 16-bit opcode space divided into groups.
@@ -680,6 +743,7 @@ Interpreter may ignore in non-profiling mode.
 
 ```text
 opcode: 0x0005
+format: R_IMM32
 operand: probe_id32
 ```
 
@@ -883,6 +947,80 @@ if src0 == INT64_MIN and src1 == -1:
     raise guest overflow exception
 dst = src0 / src1
 ```
+
+---
+
+## 11.4 Opcode Assignments
+
+The integer-arithmetic opcode space `0x0200 - 0x03FF` is divided into
+15 operation variants × 4 widths × 4 overflow modes. The full assignment
+table below is normative; every integer-arithmetic opcode MUST be encoded
+using the formula:
+
+```text
+opcode = 0x0200
+       + (variant_index * 0x10)        // 15 variants, 16 slots each
+       + (width_index  * 0x04)        // 4 widths (i8/i16/i32/i64)
+       + (overflow_index * 0x01)      // 4 modes (wrap/checked/assume/sat)
+```
+
+The variant indices are:
+
+```text
+0: add       1: sub       2: mul       3: div_s     4: div_u
+5: rem_s     6: rem_u     7: neg       8: not       9: and
+10: or       11: xor      12: shl      13: shr_s    14: shr_u
+```
+
+The width indices are:
+
+```text
+0: i8        1: i16       2: i32       3: i64
+```
+
+The overflow-mode indices are:
+
+```text
+0: .wrap     1: .checked  2: .assume   3: .sat
+```
+
+### Canonical examples
+
+```text
+ADD_I64_WRAP       = 0x0200 + (0*0x10) + (3*0x04) + 0 = 0x020C
+ADD_I64_CHECKED    = 0x0200 + (0*0x10) + (3*0x04) + 1 = 0x020D
+SUB_I32_WRAP       = 0x0200 + (1*0x10) + (2*0x04) + 0 = 0x0218
+MUL_I32_CHECKED    = 0x0200 + (2*0x10) + (2*0x04) + 1 = 0x0221
+DIV_S_I64_CHECKED  = 0x0200 + (3*0x10) + (3*0x04) + 1 = 0x022D
+NEG_I64_WRAP       = 0x0200 + (7*0x10) + (3*0x04) + 0 = 0x027C
+NEG_I64_CHECKED    = 0x0200 + (7*0x10) + (3*0x04) + 1 = 0x027D
+NOT_I64_WRAP       = 0x0200 + (8*0x10) + (3*0x04) + 0 = 0x028C
+SHR_U_I64_WRAP     = 0x0200 + (14*0x10) + (3*0x04) + 0 = 0x02EC
+```
+
+All canonical examples land within the `0x0200 - 0x03FF` integer-arithmetic
+range. The `NOT`, `AND`, `OR`, `XOR`, `SHL`, `SHR_S`, `SHR_U` variants have
+no overflow concept, so their `.checked`/`.assume`/`.sat` sub-slots are
+reserved and MUST decode as a trap if executed. For these variants only
+the `.wrap` mode (index 0) is meaningful; the other three slots per width
+are reserved (this does not consume extra opcode space — the slots exist
+but trap on execution).
+
+### Format
+
+All integer-arithmetic opcodes use the `R_R_R` format (§7.1) for binary
+operations (`add`, `sub`, `mul`, `div_s`, `div_u`, `rem_s`, `rem_u`,
+`and`, `or`, `xor`, `shl`, `shr_s`, `shr_u`) and the `R_R` format (§7.2)
+for unary operations (`neg`, `not`).
+
+### Range check
+
+The 15 × 4 × 4 = 240 slot allocation fits within the `0x0200 - 0x03FF`
+range (which is 0x0200 = 512 slots). The highest used slot is
+`0x0200 + (14 * 0x10) + (3 * 0x04) + 3 = 0x02EF`; the remaining
+`0x02F0 - 0x03FF` (272 slots) in the integer-arithmetic range are reserved
+for future variants (e.g., wider integers, packed SIMD-style variants
+that are not part of the dedicated `0x0F00` vector extension).
 
 ---
 
@@ -1210,7 +1348,11 @@ Optional extension.
 
 ```text
 opcode: 0x0821
+format: CALL_INDIRECT
 ```
+
+Same operand layout as `CALL_INDIRECT` (§7.7); the difference is that the
+caller's frame is discarded before the callee is entered (tail position).
 
 ---
 
@@ -1281,9 +1423,12 @@ Loads from a raw pointer using a memory site descriptor.
 
 ```text
 opcode: 0x0901
+format: R_R_SITE16
 ```
 
-Stores to a raw pointer.
+Stores to a raw pointer using a memory site descriptor. Symmetric with
+`LOAD_MEM` (§18.1): `dst` is the source value register, `src` is the
+raw pointer register, `site16` is the memory-site descriptor index.
 
 ---
 
@@ -1483,9 +1628,12 @@ Does not raise on type mismatch.
 
 ```text
 opcode: 0x0A30
+format: R_R_IMM32
 ```
 
-Creates a closure object.
+Creates a closure object. `dst` is the closure register, `src` is the
+environment register (the captured environment, possibly null), and the
+32-bit immediate is the index into the Closure Descriptor Table.
 
 Uses a closure descriptor:
 
@@ -1587,9 +1735,11 @@ Suspends waiting for an awaited value.
 
 ```text
 opcode: 0x0D02
+format: R
 ```
 
-Requests cooperative close/cancel.
+Requests cooperative close/cancel on the suspension referenced by the
+single register operand.
 
 ---
 
@@ -1680,6 +1830,8 @@ These opcodes support tracing and tooling.
 
 They must not alter guest semantics unless tooling semantics require it.
 
+The trace/debug opcode range is `0x1000 - 0x10FF` (see §8).
+
 ## 24.1 `TRACE_PROMOTE_HINT`
 
 Optional metadata opcode.
@@ -1687,6 +1839,16 @@ Optional metadata opcode.
 Suggests that a value is a promotion candidate.
 
 Ignored by normal execution.
+
+```text
+opcode: 0x1000
+format: R_IMM32
+operand: hint_id32
+```
+
+The `dst` register holds the value being suggested for promotion; the
+32-bit immediate is a hint identifier the trace recorder may use to
+correlate the hint with downstream profile data.
 
 ---
 
@@ -1696,17 +1858,49 @@ Suggests that an allocation is virtualizable.
 
 Ignored by normal execution.
 
+```text
+opcode: 0x1001
+format: R_IMM32
+operand: hint_id32
+```
+
+The `dst` register holds the reference to the allocation being suggested
+as virtualizable; the 32-bit immediate is a hint identifier.
+
 ---
 
 ## 24.3 `DEBUG_BREAKPOINT`
 
 Debugger breakpoint hook.
 
+```text
+opcode: 0x1002
+format: R_IMM32
+operand: breakpoint_id32
+```
+
+The 32-bit immediate is the breakpoint identifier. The `dst` register
+field is reserved (zero on encode, ignored on decode) — this opcode
+takes no value operand; it is a pure control hook for the debugger.
+Execution under a debugger transfers control to the debugger; execution
+without a debugger is a no-op.
+
 ---
 
 ## 24.4 `MONITOR_EVENT`
 
 Monitoring hook.
+
+```text
+opcode: 0x1003
+format: R_IMM32
+operand: event_id32
+```
+
+The 32-bit immediate is the event identifier (an index into the module's
+Monitor Event Table). The `dst` register field is reserved (zero on
+encode, ignored on decode). The runtime may emit a monitor event for
+profiling or tracing; semantically neutral unless tooling is active.
 
 ---
 

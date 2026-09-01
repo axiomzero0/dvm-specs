@@ -58,7 +58,9 @@ If you are reading these specs for the first time, the recommended order is:
                     ┌────────────────────────────────────────┐
                     │   DVM Compiler Laws (Rules 1–112)      │
                     │   Universal invariants & CI gates       │
-                    │   + PEA-X1..X6 (CR-PEA capability gates)│
+                    │   + PEA-X1..X6 (CR-PEA capability gates,│
+                    │   proposed in DVM-CR-PEA.md, pending    │
+                    │   amendment after review)               │
                     └─────────────────┬──────────────────────┘
                                       │ governs
               ┌───────────────────────┼───────────────────────┐
@@ -119,12 +121,15 @@ If you are reading these specs for the first time, the recommended order is:
     interpreter executes, that the trace recorder records from, and that
     DGW lifts from / lowers to. The canonical deopt target.
 *   **Escape Lattice** — The lattice over `EscapeClass` values
-    (`NonEscape`, `LocalEscape`, `CallerEscape`, `ArgEscape`,
+    (`Unknown`, `NonEscape`, `LocalEscape`, `CallerEscape`, `ArgEscape`,
     `ReturnEscape`, `StoreEscape`, `GlobalEscape`, `NativeEscape`,
     `IdentityEscape`, `MonitorEscape`, `WeakRefEscape`,
     `FinalizerEscape`, `IntrospectionEscape`, `SuspensionEscape`,
     `ThrowableEscape`, `BottomEscape`) used by CR-PEA to classify
-    each region's escape set per context.
+    each region's escape set per context. `Unknown` is the start /
+    unevaluated state; `NonEscape` is the empty set (least escaping,
+    most virtualizable); `BottomEscape` is the universal set (most
+    escaping, least virtualizable).
 *   **Trace Scheduling** — The Phase-K lowering step that walks `CONTROL`
     edges using PGO probabilities to form linear traces, then groups them
     into `MachineBasicBlock`s for instruction selection.
