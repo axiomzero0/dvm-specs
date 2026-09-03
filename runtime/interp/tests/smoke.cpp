@@ -22,6 +22,7 @@
 //     ADD_I64_WRAP r2, r0, r1   ; r2 = 42
 //     RET r2
 //
+#include <algorithm>
 #include <cstring>
 #include <print>
 #include <vector>
@@ -101,6 +102,30 @@ struct ModuleBuilder {
   void pad_to(std::size_t alignment) {
     while (raw.size() % alignment != 0) emit_u8(0);
   }
+
+  // Write the 88-byte CRB §3.1 header at offset 0.
+  void write_header(std::uint32_t section_count, std::uint64_t sect_table_off) {
+    // Zero the 88 bytes first.
+    std::fill(raw.begin(), raw.begin() + 88, std::byte{0});
+    // Construct the header in a local and memcpy it in.
+    ModuleHeader h{};
+    h.magic = kMagicValue;           // "CRB1" LE = 0x31425243
+    h.version_major = kVersionMajor;
+    h.version_minor = kVersionMinor;
+    h.flags = 0;
+    h.guest_profile_hash_lo = 0;
+    h.guest_profile_hash_hi = 0;
+    h.dvm_abi_version = 0;
+    h.extension_count = 0;
+    h.extension_table_offset = 0;
+    h.section_count = section_count;
+    h.section_table_offset = sect_table_off;
+    h.header_crc32 = 0;
+    h.module_crc32 = 0;
+    h.reserved_0 = 0;
+    h.reserved_1 = 0;
+    std::memcpy(raw.data(), &h, sizeof(h));
+  }
 };
 
 // Build a module for Test 1: a single function that adds two constants.
@@ -129,17 +154,17 @@ std::vector<std::byte> build_module_test1() {
   std::size_t ft_sz = sizeof(fns);
 
   // Layout:
-  //   [0 .. 32)    header (patched last)
-  //   [32 .. 80)   section table (3 entries × 16 bytes)
-  //   [80 .. +code_sz)  code
-  //   [80+code_sz .. +cp_sz)  constant pool
-  //   [80+code_sz+cp_sz .. +ft_sz) function table
-  std::size_t code_offset = 80;
+  //   [0 .. 88)    header (88 bytes, patched last)
+  //   [88 .. 136)  section table (3 entries × 16 bytes = 48 bytes)
+  //   [136 .. +code_sz)  code
+  //   [136+code_sz .. +cp_sz)  constant pool
+  //   [136+code_sz+cp_sz .. +ft_sz) function table
+  std::size_t code_offset = 136;
   std::size_t cp_offset   = code_offset + code_sz;
   std::size_t ft_offset   = cp_offset + cp_sz;
 
-  // Emit header placeholder (32 bytes of zeros — patched later).
-  for (int i = 0; i < 32; ++i) b.emit_u8(0);
+  // Emit header placeholder (88 bytes of zeros — patched later).
+  for (std::size_t i = 0; i < 88; ++i) b.emit_u8(0);
   // Emit section table entries (3 × 16 bytes).
   b.emit_u32(static_cast<std::uint32_t>(SectionType::Code));
   b.emit_u32(static_cast<std::uint32_t>(code_offset));
@@ -160,19 +185,8 @@ std::vector<std::byte> build_module_test1() {
   // Emit function table.
   b.emit_bytes(fns, ft_sz);
 
-  // Patch the header at offset 0.
-  ModuleHeader h{};
-  std::memcpy(h.magic, "CRB", 3);
-  h.magic[3] = 0;
-  h.version_major = kVersionMajor;
-  h.version_minor = kVersionMinor;
-  h.flags = 0;
-  h.section_count = 3;
-  h.section_table_offset = 32;
-  h.constant_pool_offset = static_cast<std::uint32_t>(cp_offset);
-  h.string_pool_offset = 0;
-  h.reserved = 0;
-  std::memcpy(b.raw.data(), &h, sizeof(h));
+  // Patch the header at offset 0 (88 bytes per CRB §3.1).
+  b.write_header(3, 88);
 
   return b.raw;
 }
@@ -209,12 +223,12 @@ std::vector<std::byte> build_module_test2() {
   };
   std::size_t ft_sz = sizeof(fns);
 
-  std::size_t code_offset = 80;
+  std::size_t code_offset = 136;
   std::size_t cp_offset   = code_offset + code_total;
   std::size_t ft_offset   = cp_offset + cp_sz;
 
-  // Emit header placeholder (32 bytes of zeros — patched later).
-  for (int i = 0; i < 32; ++i) b.emit_u8(0);
+  // Emit header placeholder (88 bytes of zeros — patched later).
+  for (std::size_t i = 0; i < 88; ++i) b.emit_u8(0);
   b.emit_u32(static_cast<std::uint32_t>(SectionType::Code));
   b.emit_u32(static_cast<std::uint32_t>(code_offset));
   b.emit_u32(static_cast<std::uint32_t>(code_total));
@@ -233,18 +247,8 @@ std::vector<std::byte> build_module_test2() {
   b.emit_bytes(consts, cp_sz);
   b.emit_bytes(fns, ft_sz);
 
-  ModuleHeader h{};
-  std::memcpy(h.magic, "CRB", 3);
-  h.magic[3] = 0;
-  h.version_major = kVersionMajor;
-  h.version_minor = kVersionMinor;
-  h.flags = 0;
-  h.section_count = 3;
-  h.section_table_offset = 32;
-  h.constant_pool_offset = static_cast<std::uint32_t>(cp_offset);
-  h.string_pool_offset = 0;
-  h.reserved = 0;
-  std::memcpy(b.raw.data(), &h, sizeof(h));
+  // Patch the 88-byte header at offset 0.
+  b.write_header(3, 88);
 
   return b.raw;
 }

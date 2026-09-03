@@ -32,8 +32,8 @@ LoadResult load_module(std::span<const std::byte> raw) noexcept {
   // alignment of the underlying byte buffer).
   crb::ModuleHeader h;
   std::memcpy(&h, raw.data(), sizeof(h));
-  // Magic check.
-  if (std::memcmp(h.magic, crb::kMagic.data(), 3) != 0 || h.magic[3] != 0) {
+  // Magic check: spec §3.1 says magic = 0x31425243 ("CRB1" LE).
+  if (h.magic != crb::kMagicValue) {
     r.error = "bad magic (not a CRB module)";
     return r;
   }
@@ -43,19 +43,20 @@ LoadResult load_module(std::span<const std::byte> raw) noexcept {
     r.error = "unsupported CRB version";
     return r;
   }
-  if (h.reserved != 0) {
-    r.error = "header reserved field is not zero";
+  if (h.reserved_0 != 0 || h.reserved_1 != 0) {
+    r.error = "header reserved fields are not zero";
     return r;
   }
-  // Section table bounds.
-  if (!in_bounds(raw, h.section_table_offset,
-                 std::size_t{h.section_count} * sizeof(crb::SectionEntry))) {
+  // Section table bounds. section_table_offset is now uint64_t.
+  std::uint64_t st_off = h.section_table_offset;
+  std::size_t st_size = std::size_t{h.section_count} * sizeof(crb::SectionEntry);
+  if (st_off > raw.size() || st_size > raw.size() - st_off) {
     r.error = "section table out of bounds";
     return r;
   }
   // Build the section span.
   const auto* sec_arr = reinterpret_cast<const crb::SectionEntry*>(
-      raw.data() + h.section_table_offset);
+      raw.data() + st_off);
   r.module.sections = std::span<const crb::SectionEntry>(sec_arr, h.section_count);
 
   // Walk the section table and fill in the section-specific views.

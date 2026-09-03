@@ -52,19 +52,31 @@ struct alignas(8) InstrCell {
 static_assert(sizeof(InstrCell) == 8, "InstrCell must be 8 bytes");
 
 // ---- CRB module header (§3.1) -------------------------------------------
-// 32 bytes, little-endian, fixed layout.
+// 88 bytes with natural C++ alignment. Magic is 'CRB1' little-endian
+// (0x31425243 = bytes 0x43, 0x52, 0x42, 0x31).
 struct alignas(8) ModuleHeader {
-  char          magic[4];        // "CRB\0"
-  std::uint16_t version_major;
-  std::uint16_t version_minor;
-  std::uint32_t flags;           // §3.1 Header flags
+  std::uint32_t magic;                  // 0x31425243 ("CRB1" LE)
+  std::uint16_t version_major;          // 1
+  std::uint16_t version_minor;          // 0
+  std::uint32_t flags;                   // §3.1 Header flags
+  std::uint64_t guest_profile_hash_lo;
+  std::uint64_t guest_profile_hash_hi;
+  std::uint32_t dvm_abi_version;
+  std::uint32_t extension_count;
+  std::uint64_t extension_table_offset;
   std::uint32_t section_count;
-  std::uint32_t section_table_offset;  // byte offset into the module
-  std::uint32_t constant_pool_offset;
-  std::uint32_t string_pool_offset;
-  std::uint32_t reserved;       // must be 0
+  std::uint32_t _pad0;                   // align section_table_offset to 8
+  std::uint64_t section_table_offset;
+  std::uint32_t header_crc32;
+  std::uint32_t module_crc32;
+  std::uint32_t reserved_0;
+  std::uint32_t _pad1;                   // align reserved_1 to 8
+  std::uint64_t reserved_1;
 };
-static_assert(sizeof(ModuleHeader) == 32, "ModuleHeader must be 32 bytes");
+static_assert(sizeof(ModuleHeader) == 88, "ModuleHeader must be 88 bytes per CRB §3.1");
+
+// The magic value: 'CRB1' as a little-endian uint32_t.
+constexpr std::uint32_t kMagicValue = 0x31425243u;
 
 // ---- Section table entry (§3.2) -----------------------------------------
 struct alignas(4) SectionEntry {
@@ -164,7 +176,6 @@ struct Module {
 };
 
 // ---- Magic / version helpers --------------------------------------------
-constexpr std::string_view kMagic = "CRB";
 constexpr std::uint16_t kVersionMajor = 1;
 constexpr std::uint16_t kVersionMinor = 0;
 
