@@ -53,7 +53,28 @@ OpResult op_add_i64_checked(InterpState& s, const crb::InstrCell& cell) noexcept
 
 // ---- §14 Comparison (opcodes_arith.cpp) ---------------------------------
 OpResult op_cmp_eq(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_cmp_ne(InterpState& s, const crb::InstrCell& cell) noexcept;
 OpResult op_cmp_lt_s(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_cmp_le_s(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_cmp_gt_s(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_cmp_ge_s(InterpState& s, const crb::InstrCell& cell) noexcept;
+
+// ---- §12 Floating-point arithmetic (opcodes_arith.cpp) -------------------
+OpResult op_fadd_f64(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_fsub_f64(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_fmul_f64(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_fdiv_f64(InterpState& s, const crb::InstrCell& cell) noexcept;
+
+// ---- §13 Conversion (opcodes_arith.cpp) --------------------------------
+OpResult op_i64_to_f64(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_f64_to_i64_wrap(InterpState& s, const crb::InstrCell& cell) noexcept;
+
+// ---- §19 Allocation (opcodes_object.cpp) -------------------------------
+OpResult op_alloc(InterpState& s, const crb::InstrCell& cell) noexcept;
+
+// ---- §18 Object model (opcodes_object.cpp) ------------------------------
+OpResult op_obj_get(InterpState& s, const crb::InstrCell& cell) noexcept;
+OpResult op_obj_set(InterpState& s, const crb::InstrCell& cell) noexcept;
 
 // ---- §15 Control flow (opcodes_control.cpp) ------------------------------
 OpResult op_jmp(InterpState& s, const crb::InstrCell& cell) noexcept;

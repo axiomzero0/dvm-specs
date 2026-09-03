@@ -4,6 +4,9 @@
 
 namespace dvm {
 
+// free_heap() is implemented in opcodes_object.cpp where ObjStorage is
+// fully defined (needed for `delete` to call the destructor).
+
 void InterpState::push_frame(const crb::FunctionEntry& fn) {
   Frame f;
   f.function = &fn;

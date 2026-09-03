@@ -74,7 +74,20 @@ Value interpret(const crb::Module& module, std::uint32_t entry_function_id) {
     dispatch[crb::op::NEG_I64_WRAP]    = &&op_neg_i64_wrap;
     dispatch[crb::op::ADD_I64_CHECKED] = &&op_add_i64_checked;
     dispatch[crb::op::CMP_EQ]          = &&op_cmp_eq;
+    dispatch[crb::op::CMP_NE]          = &&op_cmp_ne;
     dispatch[crb::op::CMP_LT_S]        = &&op_cmp_lt_s;
+    dispatch[crb::op::CMP_LE_S]        = &&op_cmp_le_s;
+    dispatch[crb::op::CMP_GT_S]        = &&op_cmp_gt_s;
+    dispatch[crb::op::CMP_GE_S]        = &&op_cmp_ge_s;
+    dispatch[crb::op::FADD_F64]       = &&op_fadd_f64;
+    dispatch[crb::op::FSUB_F64]       = &&op_fsub_f64;
+    dispatch[crb::op::FMUL_F64]       = &&op_fmul_f64;
+    dispatch[crb::op::FDIV_F64]       = &&op_fdiv_f64;
+    dispatch[crb::op::I64_TO_F64]     = &&op_i64_to_f64;
+    dispatch[crb::op::F64_TO_I64_WRAP] = &&op_f64_to_i64_wrap;
+    dispatch[crb::op::ALLOC]           = &&op_alloc;
+    dispatch[crb::op::OBJ_GET]        = &&op_obj_get;
+    dispatch[crb::op::OBJ_SET]        = &&op_obj_set;
     dispatch[crb::op::JMP]              = &&op_jmp;
     dispatch[crb::op::BR_TRUE]         = &&op_br_true;
     dispatch[crb::op::BR_FALSE]        = &&op_br_false;
@@ -187,8 +200,81 @@ op_cmp_eq: {
     if (r != OpResult::Continue) goto interp_exit;
     DISPATCH_NEXT();
   }
+op_cmp_ne: {
+    OpResult r = op_cmp_ne(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
 op_cmp_lt_s: {
     OpResult r = op_cmp_lt_s(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+op_cmp_le_s: {
+    OpResult r = op_cmp_le_s(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+op_cmp_gt_s: {
+    OpResult r = op_cmp_gt_s(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+op_cmp_ge_s: {
+    OpResult r = op_cmp_ge_s(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+
+  // ---- §12 Floating-point arithmetic -------------------------------------
+op_fadd_f64: {
+    OpResult r = op_fadd_f64(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+op_fsub_f64: {
+    OpResult r = op_fsub_f64(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+op_fmul_f64: {
+    OpResult r = op_fmul_f64(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+op_fdiv_f64: {
+    OpResult r = op_fdiv_f64(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+
+  // ---- §13 Conversion ----------------------------------------------------
+op_i64_to_f64: {
+    OpResult r = op_i64_to_f64(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+op_f64_to_i64_wrap: {
+    OpResult r = op_f64_to_i64_wrap(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+
+  // ---- §19 Allocation ----------------------------------------------------
+op_alloc: {
+    OpResult r = op_alloc(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+
+  // ---- §18 Object model --------------------------------------------------
+op_obj_get: {
+    OpResult r = op_obj_get(s, s.fetch());
+    if (r != OpResult::Continue) goto interp_exit;
+    DISPATCH_NEXT();
+  }
+op_obj_set: {
+    OpResult r = op_obj_set(s, s.fetch());
     if (r != OpResult::Continue) goto interp_exit;
     DISPATCH_NEXT();
   }
@@ -243,6 +329,8 @@ op_unknown: {
   }
 
 interp_exit:
+  // Free all heap-allocated objects before returning.
+  s.free_heap();
   return s.exit_value;
 
 #undef DISPATCH_NEXT

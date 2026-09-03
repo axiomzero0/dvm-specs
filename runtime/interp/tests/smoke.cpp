@@ -304,6 +304,139 @@ int main() {
   }
   std::println("Test 2: fn1 calls fn0(40 + 2) = {} (PASS)", result2.as_i64());
 
+  // ---- Test 3: counting loop (BR_TRUE + JMP back) -----------------------
+  // Counts from 0 to 10 using a backward branch.
+  // Code layout (7 instructions):
+  //   0: MOV_CONST r0, const(0)    ; r0 = 0  (counter)
+  //   1: MOV_CONST r1, const(1)    ; r1 = 1  (increment)
+  //   2: MOV_CONST r2, const(10)  ; r2 = 10 (limit)
+  //   3: ADD_I64_WRAP r0, r0, r1  ; r0 += 1
+  //   4: CMP_LT_S r3, r0, r2       ; r3 = (r0 < 10)
+  //   5: BR_TRUE r3, -3            ; if r3: goto 3 (delta=-3 from next PC=6 → PC=3)
+  //   6: RET r0                    ; return 10
+  std::println("\n-- Test 3: counting loop (BR_TRUE + JMP back) --");
+  {
+    ModuleBuilder b;
+    InstrCell code[7] = {
+      cell(op::MOV_CONST,    0, 0, 0),
+      cell(op::MOV_CONST,    1, 1, 0),
+      cell(op::MOV_CONST,    2, 2, 0),
+      cell(op::ADD_I64_WRAP, 0, 0, 1),
+      cell(op::CMP_LT_S,     3, 0, 2),
+      // BR_TRUE r3, delta=-3: delta32_low=0xFFFD, delta32_high=0xFFFF
+      cell(op::BR_TRUE,      3, 0xFFFD, 0xFFFF),
+      cell(op::RET,          0),
+    };
+    std::size_t code_sz = sizeof(code);
+    ConstantEntry consts[3] = {
+      i64_const(0),   // const 0 = counter init
+      i64_const(1),   // const 1 = increment
+      i64_const(10), // const 2 = limit
+    };
+    std::size_t cp_sz = sizeof(consts);
+    FunctionEntry fns[1] = {
+      make_fn(0, 0, static_cast<std::uint32_t>(code_sz), 4),
+    };
+    std::size_t ft_sz = sizeof(fns);
+
+    std::size_t code_offset = 136;
+    std::size_t cp_offset   = code_offset + code_sz;
+    std::size_t ft_offset   = cp_offset + cp_sz;
+
+    for (std::size_t i = 0; i < 88; ++i) b.emit_u8(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::Code));
+    b.emit_u32(static_cast<std::uint32_t>(code_offset));
+    b.emit_u32(static_cast<std::uint32_t>(code_sz));
+    b.emit_u32(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::ConstantPool));
+    b.emit_u32(static_cast<std::uint32_t>(cp_offset));
+    b.emit_u32(static_cast<std::uint32_t>(cp_sz));
+    b.emit_u32(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::FunctionTable));
+    b.emit_u32(static_cast<std::uint32_t>(ft_offset));
+    b.emit_u32(static_cast<std::uint32_t>(ft_sz));
+    b.emit_u32(0);
+    b.emit_bytes(code, code_sz);
+    b.emit_bytes(consts, cp_sz);
+    b.emit_bytes(fns, ft_sz);
+    b.write_header(3, 88);
+
+    auto raw3 = b.raw;
+    auto lr3 = load_module(raw3);
+    if (!lr3.ok) {
+      std::println("FAIL: load_module test 3: {}", lr3.error);
+      return 1;
+    }
+    Value result3 = interpret(lr3.module, 0);
+    if (result3.tag != TypeTag::Int64 || result3.as_i64() != 10) {
+      std::println("FAIL: result is {} (expected 10)", result3.as_i64());
+      return 1;
+    }
+    std::println("Test 3: count to 10 = {} (PASS)", result3.as_i64());
+  }
+
+  // ---- Test 4: object alloc + set + get ----------------------------------
+  // Allocates an object with 2 fields, sets field 0 = 42, reads it back.
+  // Code:
+  //   0: ALLOC r0, 2              ; r0 = new Obj(2 fields)
+  //   1: MOV_CONST r1, const(0)  ; r1 = 42
+  //   2: OBJ_SET r0, 0, r1       ; r0.field[0] = 42
+  //   3: OBJ_GET r2, r0, 0       ; r2 = r0.field[0]
+  //   4: RET r2
+  std::println("\n-- Test 4: ALLOC + OBJ_SET + OBJ_GET --");
+  {
+    ModuleBuilder b;
+    InstrCell code[5] = {
+      cell(op::ALLOC,      0, 2, 0),   // r0 = alloc(2 fields)
+      cell(op::MOV_CONST,  1, 0, 0),   // r1 = const(0) = 42
+      cell(op::OBJ_SET,    0, 0, 1),   // r0.field[0] = r1
+      cell(op::OBJ_GET,    2, 0, 0),   // r2 = r0.field[0]
+      cell(op::RET,        2),
+    };
+    std::size_t code_sz = sizeof(code);
+    ConstantEntry consts[1] = { i64_const(42) };
+    std::size_t cp_sz = sizeof(consts);
+    FunctionEntry fns[1] = {
+      make_fn(0, 0, static_cast<std::uint32_t>(code_sz), 3),
+    };
+    std::size_t ft_sz = sizeof(fns);
+
+    std::size_t code_offset = 136;
+    std::size_t cp_offset   = code_offset + code_sz;
+    std::size_t ft_offset   = cp_offset + cp_sz;
+
+    for (std::size_t i = 0; i < 88; ++i) b.emit_u8(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::Code));
+    b.emit_u32(static_cast<std::uint32_t>(code_offset));
+    b.emit_u32(static_cast<std::uint32_t>(code_sz));
+    b.emit_u32(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::ConstantPool));
+    b.emit_u32(static_cast<std::uint32_t>(cp_offset));
+    b.emit_u32(static_cast<std::uint32_t>(cp_sz));
+    b.emit_u32(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::FunctionTable));
+    b.emit_u32(static_cast<std::uint32_t>(ft_offset));
+    b.emit_u32(static_cast<std::uint32_t>(ft_sz));
+    b.emit_u32(0);
+    b.emit_bytes(code, code_sz);
+    b.emit_bytes(consts, cp_sz);
+    b.emit_bytes(fns, ft_sz);
+    b.write_header(3, 88);
+
+    auto raw4 = b.raw;
+    auto lr4 = load_module(raw4);
+    if (!lr4.ok) {
+      std::println("FAIL: load_module test 4: {}", lr4.error);
+      return 1;
+    }
+    Value result4 = interpret(lr4.module, 0);
+    if (result4.tag != TypeTag::Int64 || result4.as_i64() != 42) {
+      std::println("FAIL: result is {} (expected 42)", result4.as_i64());
+      return 1;
+    }
+    std::println("Test 4: ALLOC + OBJ_SET(42) + OBJ_GET = {} (PASS)", result4.as_i64());
+  }
+
   std::println("\n== DVM Interpreter smoke test PASSED ==");
   return 0;
 }

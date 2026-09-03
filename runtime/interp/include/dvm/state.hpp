@@ -19,6 +19,9 @@
 
 namespace dvm {
 
+// ---- Forward declaration for the object storage ------------------------
+struct ObjStorage;
+
 // ---- Call frame ----------------------------------------------------------
 // A frame holds the function being executed, the register file, and the
 // return PC (where to resume after RET). The register file is per-frame
@@ -52,6 +55,15 @@ struct InterpState {
   // Exit value (the value returned from the outermost frame, or the
   // exception value if the interpreter exited via uncaught exception).
   Value exit_value{};
+
+  // Heap: tracks all ObjStorage allocations so they can be freed after
+  // execution. A real GC would manage this; the minimal interpreter just
+  // frees everything at the end.
+  std::vector<ObjStorage*> heap;
+
+  // Free all heap-allocated objects. Called by interpret() after the
+  // dispatch loop exits.
+  void free_heap() noexcept;
 
   // ---- Frame helpers -----------------------------------------------------
   // Push a new frame for `fn`. The frame's register file is sized to
