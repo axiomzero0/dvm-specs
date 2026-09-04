@@ -72,9 +72,9 @@ OpResult op_jmp(InterpState& s, const crb::InstrCell& cell) noexcept {
   std::int32_t delta = signed_delta32(cell.s2(), cell.s3());
   s.advance();
   // A JMP is always "taken" — mark it as a branch exit or loop close.
-  if (s.recorder && s.recorder->is_recording()) {
-    mark_branch_or_loop(s, delta);
-  }
+  // Called unconditionally so the hotness tracker can count backedges
+  // even when not recording.
+  mark_branch_or_loop(s, delta);
   s.branch(delta);
   return OpResult::Continue;
 }

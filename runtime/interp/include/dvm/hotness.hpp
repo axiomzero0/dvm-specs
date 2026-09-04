@@ -22,7 +22,7 @@ namespace dvm {
 // ---- Hotness tracker ----------------------------------------------------
 class HotnessTracker {
  public:
-  static constexpr std::uint32_t kDefaultThreshold = 5;
+  static constexpr std::uint32_t kDefaultThreshold = 3;
 
   explicit HotnessTracker(std::uint32_t threshold = kDefaultThreshold)
     : threshold_(threshold) {}
