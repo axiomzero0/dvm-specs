@@ -17,6 +17,7 @@
 #include "dvm/interp.hpp"
 #include "dvm/opcodes.hpp"
 #include "dvm/opcodes_def.hpp"
+#include "dvm/trace.hpp"
 
 namespace dvm {
 
@@ -35,6 +36,11 @@ struct DispatchTable {
 }  // namespace
 
 Value interpret(const crb::Module& module, std::uint32_t entry_function_id) {
+  return interpret(module, entry_function_id, nullptr);
+}
+
+Value interpret(const crb::Module& module, std::uint32_t entry_function_id,
+                 TraceRecorder* recorder) {
   // Find the entry function.
   const crb::FunctionEntry* fn = module.find_function(entry_function_id);
   if (!fn) return Value::null();
@@ -43,6 +49,15 @@ Value interpret(const crb::Module& module, std::uint32_t entry_function_id) {
   InterpState s;
   s.module = &module;
   s.push_frame(*fn);
+
+  // ---- Trace recorder setup ----------------------------------------------
+  // If a recorder is provided (non-null), start recording at the entry
+  // function's first instruction (PC=0). The recorder captures every
+  // executed instruction until a side exit or the trace closes.
+  if (recorder) {
+    s.recorder = recorder;
+    recorder->start(entry_function_id, 0, s.current().registers);
+  }
 
   // ---- Dispatch table (computed goto via GCC labels-as-values) ----------
   // Each label is a dispatch target. The dispatch table maps opcode
@@ -99,12 +114,17 @@ Value interpret(const crb::Module& module, std::uint32_t entry_function_id) {
   }
 
   // ---- Main dispatch loop -----------------------------------------------
-  // Fetch the current instruction's opcode, jump to the handler label.
-  // Each handler calls the appropriate function, checks the result,
-  // and either dispatches the next instruction or returns.
+  // Fetch the current instruction's opcode, record it (if recording),
+  // then jump to the handler label. Each handler calls the appropriate
+  // function, checks the result, and either dispatches the next
+  // instruction or returns.
 
-#define DISPATCH_NEXT() \
-  goto *dispatch[s.fetch().opcode()]
+#define DISPATCH_NEXT() do {                                   \
+    if (s.recorder && s.recorder->is_recording()) {            \
+      s.recorder->record(s, s.fetch());                         \
+    }                                                          \
+    goto *dispatch[s.fetch().opcode()];                        \
+  } while (0)
 
   DISPATCH_NEXT();
 

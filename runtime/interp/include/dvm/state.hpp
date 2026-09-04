@@ -22,6 +22,9 @@ namespace dvm {
 // ---- Forward declaration for the object storage ------------------------
 struct ObjStorage;
 
+// ---- Forward declaration for the trace recorder ------------------------
+class TraceRecorder;
+
 // ---- Call frame ----------------------------------------------------------
 // A frame holds the function being executed, the register file, and the
 // return PC (where to resume after RET). The register file is per-frame
@@ -64,6 +67,12 @@ struct InterpState {
   // Free all heap-allocated objects. Called by interpret() after the
   // dispatch loop exits.
   void free_heap() noexcept;
+
+  // ---- Trace recording --------------------------------------------------
+  // Optional trace recorder. When non-null and recording, the interpreter
+  // calls record() on every executed instruction and branch handlers
+  // call mark_exit() / mark_loop_close().
+  TraceRecorder* recorder{nullptr};
 
   // ---- Frame helpers -----------------------------------------------------
   // Push a new frame for `fn`. The frame's register file is sized to

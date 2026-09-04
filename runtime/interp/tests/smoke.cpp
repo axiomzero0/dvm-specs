@@ -31,6 +31,7 @@
 #include "dvm/interp.hpp"
 #include "dvm/loader.hpp"
 #include "dvm/opcodes_def.hpp"
+#include "dvm/trace.hpp"
 
 using namespace dvm;
 using namespace dvm::crb;
@@ -435,6 +436,119 @@ int main() {
       return 1;
     }
     std::println("Test 4: ALLOC + OBJ_SET(42) + OBJ_GET = {} (PASS)", result4.as_i64());
+  }
+
+  // ---- Test 5: trace recording of the counting loop ---------------------
+  // Runs the Test 3 loop module with a trace recorder attached.
+  // The loop starts at PC=3 (the ADD_I64_WRAP inside the loop body);
+  // the trace should record one iteration and close when BR_TRUE takes
+  // the backedge to PC=3.
+  //
+  // Since the interpreter's recorder.start() uses entry_pc=0 (the
+  // function's first instruction), the trace will record from PC=0
+  // through the first loop iteration's backedge. The trace should
+  // close with ExitReason::LoopClose at PC=3 (the backedge target).
+  std::println("\n-- Test 5: trace recording of counting loop --");
+  {
+    // Reuse the Test 3 module builder.
+    ModuleBuilder b;
+    InstrCell code[7] = {
+      cell(op::MOV_CONST,    0, 0, 0),
+      cell(op::MOV_CONST,    1, 1, 0),
+      cell(op::MOV_CONST,    2, 2, 0),
+      cell(op::ADD_I64_WRAP, 0, 0, 1),
+      cell(op::CMP_LT_S,     3, 0, 2),
+      cell(op::BR_TRUE,      3, 0xFFFD, 0xFFFF),
+      cell(op::RET,          0),
+    };
+    std::size_t code_sz = sizeof(code);
+    ConstantEntry consts[3] = {
+      i64_const(0),
+      i64_const(1),
+      i64_const(10),
+    };
+    std::size_t cp_sz = sizeof(consts);
+    FunctionEntry fns[1] = {
+      make_fn(0, 0, static_cast<std::uint32_t>(code_sz), 4),
+    };
+    std::size_t ft_sz = sizeof(fns);
+
+    std::size_t code_offset = 136;
+    std::size_t cp_offset   = code_offset + code_sz;
+    std::size_t ft_offset   = cp_offset + cp_sz;
+
+    for (std::size_t i = 0; i < 88; ++i) b.emit_u8(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::Code));
+    b.emit_u32(static_cast<std::uint32_t>(code_offset));
+    b.emit_u32(static_cast<std::uint32_t>(code_sz));
+    b.emit_u32(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::ConstantPool));
+    b.emit_u32(static_cast<std::uint32_t>(cp_offset));
+    b.emit_u32(static_cast<std::uint32_t>(cp_sz));
+    b.emit_u32(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::FunctionTable));
+    b.emit_u32(static_cast<std::uint32_t>(ft_offset));
+    b.emit_u32(static_cast<std::uint32_t>(ft_sz));
+    b.emit_u32(0);
+    b.emit_bytes(code, code_sz);
+    b.emit_bytes(consts, cp_sz);
+    b.emit_bytes(fns, ft_sz);
+    b.write_header(3, 88);
+
+    auto raw5 = b.raw;
+    auto lr5 = load_module(raw5);
+    if (!lr5.ok) {
+      std::println("FAIL: load_module test 5: {}", lr5.error);
+      return 1;
+    }
+
+    // Run with a trace recorder.
+    TraceRecorder recorder;
+    Value result5 = interpret(lr5.module, 0, &recorder);
+    if (result5.tag != TypeTag::Int64 || result5.as_i64() != 10) {
+      std::println("FAIL: result is {} (expected 10)", result5.as_i64());
+      return 1;
+    }
+
+    // Verify the trace fragment.
+    const TraceFragment& frag = recorder.fragment();
+    std::println("Trace recorded: {} instructions, exit={}, loop={}",
+                 frag.length(),
+                 static_cast<int>(frag.exit_reason),
+                 frag.is_loop() ? "yes" : "no");
+
+    // The trace should have recorded at least 7 instructions (the
+    // initial 3 MOV_CONSTs + one full loop iteration of ADD+CMP+BR_TRUE
+    // = 6 instructions, plus the BR_TRUE itself which triggers the
+    // LoopClose). The trace closes when BR_TRUE takes the backedge to
+    // the entry PC=0 — but entry_pc is 0, and the backedge target is
+    // PC=3, so it's NOT a LoopClose; it's a BranchTaken. The trace
+    // keeps recording until the RET (which is a Return exit).
+    //
+    // Actually: the recorder starts at entry_pc=0. The BR_TRUE at
+    // PC=5 takes the backedge to PC=3 (delta=-3 from next PC=6 →
+    // target=3). Since entry_pc=0 and target=3≠0, mark_branch_or_loop
+    // marks it as BranchTaken (side exit), and recording stops.
+    //
+    // So the trace should:
+    //   - Record instructions from PC=0 through PC=5 (6 instructions)
+    //   - Exit with BranchTaken at PC=6 (after the BR_TRUE advances)
+    //   - NOT be a loop (entry_pc=0 ≠ backedge target=3)
+    if (frag.length() < 6) {
+      std::println("FAIL: trace too short ({} < 6)", frag.length());
+      return 1;
+    }
+    if (frag.exit_reason != ExitReason::BranchTaken) {
+      std::println("FAIL: exit reason is {} (expected BranchTaken={})",
+                   static_cast<int>(frag.exit_reason),
+                   static_cast<int>(ExitReason::BranchTaken));
+      return 1;
+    }
+    std::println("Test 5: trace of {} instructions, exit=BranchTaken (PASS)",
+                 frag.length());
+
+    // Print the trace for verification.
+    print_trace(frag);
   }
 
   std::println("\n== DVM Interpreter smoke test PASSED ==");
