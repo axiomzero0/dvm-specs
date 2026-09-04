@@ -16,8 +16,9 @@
 
 namespace dvm {
 
-// Forward declaration
+// Forward declarations
 class TraceRecorder;
+class HotnessTracker;
 
 // Run the module starting from the function with the given ID. The
 // interpreter runs until the outermost frame returns (or TRAP fires).
@@ -31,5 +32,13 @@ Value interpret(const crb::Module& module, std::uint32_t entry_function_id);
 // After execution, the recorder's fragment holds the recorded trace.
 Value interpret(const crb::Module& module, std::uint32_t entry_function_id,
                  TraceRecorder* recorder);
+
+// Run the module with a trace recorder AND a hotness tracker. The hotness
+// tracker counts backward branches; when a loop header's backedge count
+// exceeds the threshold, it auto-starts the recorder at that loop header.
+// This implements the Tier 0 → Tier 1 meta-tracing trigger.
+// Pass nullptr for either to disable.
+Value interpret(const crb::Module& module, std::uint32_t entry_function_id,
+                 TraceRecorder* recorder, HotnessTracker* hotness);
 
 }  // namespace dvm

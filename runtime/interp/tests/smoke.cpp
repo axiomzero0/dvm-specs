@@ -32,6 +32,11 @@
 #include "dvm/loader.hpp"
 #include "dvm/opcodes_def.hpp"
 #include "dvm/trace.hpp"
+#include "dvm/hotness.hpp"
+#include "dvm/lifter.hpp"
+
+#include "dgw/graph.hpp"
+#include "dgw/kinds.hpp"
 
 using namespace dvm;
 using namespace dvm::crb;
@@ -549,6 +554,156 @@ int main() {
 
     // Print the trace for verification.
     print_trace(frag);
+  }
+
+  // ---- Test 6: hot-loop detection + auto-recording -----------------------
+  // Runs the counting loop WITHOUT manually starting the recorder.
+  // Instead, attaches a HotnessTracker with threshold=3. After 3 backedges
+  // to the loop header (PC=3), the hotness tracker triggers the recorder
+  // to start at PC=3. The trace should then record one loop iteration
+  // (ADD + CMP + BR_TRUE) and close with LoopClose (backedge to entry_pc=3).
+  std::println("\n-- Test 6: hot-loop detection + auto-recording --");
+  {
+    // Reuse the Test 3 module (7 instructions, counting to 10).
+    ModuleBuilder b;
+    InstrCell code[7] = {
+      cell(op::MOV_CONST,    0, 0, 0),
+      cell(op::MOV_CONST,    1, 1, 0),
+      cell(op::MOV_CONST,    2, 2, 0),
+      cell(op::ADD_I64_WRAP, 0, 0, 1),
+      cell(op::CMP_LT_S,     3, 0, 2),
+      cell(op::BR_TRUE,      3, 0xFFFD, 0xFFFF),
+      cell(op::RET,          0),
+    };
+    std::size_t code_sz = sizeof(code);
+    ConstantEntry consts[3] = {
+      i64_const(0),
+      i64_const(1),
+      i64_const(10),
+    };
+    std::size_t cp_sz = sizeof(consts);
+    FunctionEntry fns[1] = {
+      make_fn(0, 0, static_cast<std::uint32_t>(code_sz), 4),
+    };
+    std::size_t ft_sz = sizeof(fns);
+
+    std::size_t code_offset = 136;
+    std::size_t cp_offset   = code_offset + code_sz;
+    std::size_t ft_offset   = cp_offset + cp_sz;
+
+    for (std::size_t i = 0; i < 88; ++i) b.emit_u8(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::Code));
+    b.emit_u32(static_cast<std::uint32_t>(code_offset));
+    b.emit_u32(static_cast<std::uint32_t>(code_sz));
+    b.emit_u32(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::ConstantPool));
+    b.emit_u32(static_cast<std::uint32_t>(cp_offset));
+    b.emit_u32(static_cast<std::uint32_t>(cp_sz));
+    b.emit_u32(0);
+    b.emit_u32(static_cast<std::uint32_t>(SectionType::FunctionTable));
+    b.emit_u32(static_cast<std::uint32_t>(ft_offset));
+    b.emit_u32(static_cast<std::uint32_t>(ft_sz));
+    b.emit_u32(0);
+    b.emit_bytes(code, code_sz);
+    b.emit_bytes(consts, cp_sz);
+    b.emit_bytes(fns, ft_sz);
+    b.write_header(3, 88);
+
+    auto raw6 = b.raw;
+    auto lr6 = load_module(raw6);
+    if (!lr6.ok) {
+      std::println("FAIL: load_module test 6: {}", lr6.error);
+      return 1;
+    }
+
+    // Run with hotness tracker (threshold=3) and a recorder.
+    // The recorder is NOT manually started — the hotness tracker will
+    // auto-start it when the loop header (PC=3) hits 3 backedges.
+    TraceRecorder recorder;
+    HotnessTracker hotness(3);  // threshold = 3 backedges
+    Value result6 = interpret(lr6.module, 0, &recorder, &hotness);
+    if (result6.tag != TypeTag::Int64 || result6.as_i64() != 10) {
+      std::println("FAIL: result is {} (expected 10)", result6.as_i64());
+      return 1;
+    }
+
+    const TraceFragment& frag = recorder.fragment();
+    std::println("Hot-loop trace: {} instructions, exit={}, loop={}",
+                 frag.length(),
+                 static_cast<int>(frag.exit_reason),
+                 frag.is_loop() ? "yes" : "no");
+    std::println("  entry_pc={}, loop_head_pc={}",
+                 frag.entry_pc, frag.loop_head_pc);
+
+    // The hotness tracker triggers at 3 backedges. The recording starts
+    // at PC=3 (the loop header). The first recorded instruction is ADD
+    // (PC=3), then CMP (PC=4), then BR_TRUE (PC=5). BR_TRUE takes the
+    // backedge to PC=3, which equals entry_pc → LoopClose.
+    //
+    // Expected: 3 instructions, exit=LoopClose, loop=yes, entry_pc=3.
+    if (frag.length() < 3) {
+      std::println("FAIL: hot-loop trace too short ({} < 3)", frag.length());
+      return 1;
+    }
+    if (frag.exit_reason != ExitReason::LoopClose) {
+      std::println("FAIL: exit reason is {} (expected LoopClose={})",
+                   static_cast<int>(frag.exit_reason),
+                   static_cast<int>(ExitReason::LoopClose));
+      return 1;
+    }
+    if (!frag.is_loop()) {
+      std::println("FAIL: trace should be a loop");
+      return 1;
+    }
+    if (frag.entry_pc != 3) {
+      std::println("FAIL: entry_pc is {} (expected 3)", frag.entry_pc);
+      return 1;
+    }
+    std::println("Test 6: hot-loop detected at PC=3, trace of {} instrs, "
+                 "LoopClose (PASS)", frag.length());
+    print_trace(frag);
+
+    // ---- Test 7: lift the recorded trace into a DGW-Core IR graph --------
+    // Takes the trace from Test 6 and lifts it into a DGW-Core graph.
+    // The trace has 3 instructions: ADD_I64_WRAP, CMP_LT_S, BR_TRUE (loop).
+    // The lifted graph should have at least: START, CONST(0), CONST(1),
+    // CONST(10), ADD, CMP_LT, STATE, BRANCH nodes.
+    std::println("\n-- Test 7: lift trace into DGW-Core IR graph --");
+    {
+      dgw::Graph* graph = lift_trace(frag);
+      if (!graph) {
+        std::println("FAIL: lift_trace returned nullptr");
+        return 1;
+      }
+      std::println("Lifted graph created successfully");
+      print_lifted_graph(*graph);
+      auto& arena = graph->arena();
+      if (arena.node_count() < 5) {
+        std::println("FAIL: graph has {} nodes (expected at least 5)",
+                     arena.node_count());
+        delete graph;
+        return 1;
+      }
+      // Verify the graph has at least one ADD and one CMP node.
+      bool has_add = false, has_cmp = false;
+      for (std::uint32_t n = 0; n < arena.node_count(); ++n) {
+        if (arena.node_kinds[n] == dgw::NodeKind::ADD) has_add = true;
+        if (arena.node_kinds[n] == dgw::NodeKind::CMP_LT) has_cmp = true;
+      }
+      if (!has_add) {
+        std::println("FAIL: graph has no ADD node");
+        delete graph;
+        return 1;
+      }
+      if (!has_cmp) {
+        std::println("FAIL: graph has no CMP_LT node");
+        delete graph;
+        return 1;
+      }
+      std::println("Test 7: lifted graph has {} nodes, {} edges, ADD+CMP present (PASS)",
+                   arena.node_count(), arena.edge_count());
+      delete graph;
+    }
   }
 
   std::println("\n== DVM Interpreter smoke test PASSED ==");

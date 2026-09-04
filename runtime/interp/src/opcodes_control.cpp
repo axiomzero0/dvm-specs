@@ -18,6 +18,7 @@
 //
 #include "dvm/opcodes.hpp"
 #include "dvm/trace.hpp"
+#include "dvm/hotness.hpp"
 
 namespace dvm {
 
@@ -38,9 +39,25 @@ void mark_branch_exit(InterpState& s, ExitReason reason) noexcept {
 
 // Check if a taken branch is a backedge to the trace head (loop close).
 // If so, mark LoopClose; otherwise mark BranchTaken.
+// Also: if the branch is backward (delta < 0) and a HotnessTracker is
+// attached, count the backedge. If the counter hits the threshold,
+// auto-start recording at the branch target (the loop header).
 void mark_branch_or_loop(InterpState& s, std::int32_t delta) noexcept {
-  if (!s.recorder || !s.recorder->is_recording()) return;
-  // Compute the target PC (after advance, so current.pc is the next instr).
+  if (!s.recorder || !s.recorder->is_recording()) {
+    // Not recording. Check hotness on backward branches.
+    if (delta < 0 && s.hotness) {
+      std::int64_t target = static_cast<std::int64_t>(s.current().pc) + delta;
+      auto target_pc = static_cast<std::uint32_t>(target);
+      if (s.hotness->on_backedge(target_pc)) {
+        if (s.recorder) {
+          s.recorder->start(s.current_function_id, target_pc,
+                             s.current().registers);
+          }
+      }
+    }
+    return;
+  }
+  // Recording: check if this is a loop close (backedge to entry_pc).
   std::int64_t target = static_cast<std::int64_t>(s.current().pc) + delta;
   if (target == static_cast<std::int64_t>(s.recorder->fragment().entry_pc)) {
     s.recorder->mark_loop_close(static_cast<std::uint32_t>(target));
@@ -67,12 +84,9 @@ OpResult op_br_true(InterpState& s, const crb::InstrCell& cell) noexcept {
   bool cond = s.reg(cell.s1()).truthy();
   s.advance();
   if (cond) {
-    if (s.recorder && s.recorder->is_recording()) {
-      mark_branch_or_loop(s, delta);
-    }
+    mark_branch_or_loop(s, delta);
     s.branch(delta);
   } else {
-    // Branch not taken → side exit (fall-through is a different path).
     mark_branch_exit(s, ExitReason::BranchNotTaken);
   }
   return OpResult::Continue;
@@ -83,9 +97,7 @@ OpResult op_br_false(InterpState& s, const crb::InstrCell& cell) noexcept {
   bool cond = s.reg(cell.s1()).truthy();
   s.advance();
   if (!cond) {
-    if (s.recorder && s.recorder->is_recording()) {
-      mark_branch_or_loop(s, delta);
-    }
+    mark_branch_or_loop(s, delta);
     s.branch(delta);
   } else {
     mark_branch_exit(s, ExitReason::BranchNotTaken);
@@ -98,9 +110,7 @@ OpResult op_br_null(InterpState& s, const crb::InstrCell& cell) noexcept {
   bool is_null = s.reg(cell.s1()).tag == TypeTag::Null;
   s.advance();
   if (is_null) {
-    if (s.recorder && s.recorder->is_recording()) {
-      mark_branch_or_loop(s, delta);
-    }
+    mark_branch_or_loop(s, delta);
     s.branch(delta);
   } else {
     mark_branch_exit(s, ExitReason::BranchNotTaken);
@@ -113,9 +123,7 @@ OpResult op_br_nonnull(InterpState& s, const crb::InstrCell& cell) noexcept {
   bool is_null = s.reg(cell.s1()).tag == TypeTag::Null;
   s.advance();
   if (!is_null) {
-    if (s.recorder && s.recorder->is_recording()) {
-      mark_branch_or_loop(s, delta);
-    }
+    mark_branch_or_loop(s, delta);
     s.branch(delta);
   } else {
     mark_branch_exit(s, ExitReason::BranchNotTaken);

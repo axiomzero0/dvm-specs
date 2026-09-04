@@ -18,6 +18,7 @@
 #include "dvm/opcodes.hpp"
 #include "dvm/opcodes_def.hpp"
 #include "dvm/trace.hpp"
+#include "dvm/hotness.hpp"
 
 namespace dvm {
 
@@ -36,11 +37,16 @@ struct DispatchTable {
 }  // namespace
 
 Value interpret(const crb::Module& module, std::uint32_t entry_function_id) {
-  return interpret(module, entry_function_id, nullptr);
+  return interpret(module, entry_function_id, nullptr, nullptr);
 }
 
 Value interpret(const crb::Module& module, std::uint32_t entry_function_id,
                  TraceRecorder* recorder) {
+  return interpret(module, entry_function_id, recorder, nullptr);
+}
+
+Value interpret(const crb::Module& module, std::uint32_t entry_function_id,
+                 TraceRecorder* recorder, HotnessTracker* hotness) {
   // Find the entry function.
   const crb::FunctionEntry* fn = module.find_function(entry_function_id);
   if (!fn) return Value::null();
@@ -49,14 +55,24 @@ Value interpret(const crb::Module& module, std::uint32_t entry_function_id,
   InterpState s;
   s.module = &module;
   s.push_frame(*fn);
+  s.current_function_id = entry_function_id;
 
-  // ---- Trace recorder setup ----------------------------------------------
-  // If a recorder is provided (non-null), start recording at the entry
-  // function's first instruction (PC=0). The recorder captures every
-  // executed instruction until a side exit or the trace closes.
-  if (recorder) {
+  // ---- Trace recorder + hotness setup -----------------------------------
+  // If a recorder is provided (non-null) AND no hotness tracker is
+  // provided, start recording at the entry function's PC=0 immediately.
+  //
+  // If a hotness tracker IS provided, do NOT start recording yet — the
+  // hotness tracker will auto-start the recorder when a loop header's
+  // backedge count exceeds the threshold (triggered from branch handlers).
+  if (recorder && !hotness) {
     s.recorder = recorder;
     recorder->start(entry_function_id, 0, s.current().registers);
+  }
+  if (recorder && hotness) {
+    s.recorder = recorder;
+  }
+  if (hotness) {
+    s.hotness = hotness;
   }
 
   // ---- Dispatch table (computed goto via GCC labels-as-values) ----------

@@ -18,9 +18,9 @@ SAN_FLAGS := -fsanitize=address,undefined -fno-omit-frame-pointer
 else
 SAN_FLAGS :=
 endif
-CPPFLAGS := -Iinclude
+CPPFLAGS := -Iinclude -I../../compiler/dgw-core/include
 CXXFLAGS := $(CXXSTD) $(WARN) $(OPT) $(SAN_FLAGS) $(EXTRA_CXXFLAGS)
-LDFLAGS  := $(SAN_FLAGS)
+LDFLAGS  := $(SAN_FLAGS) -L../../compiler/dgw-core/build -ldgwcore
 
 # Sources & objects
 SRCDIR   := src
@@ -55,9 +55,9 @@ lib: $(BUILDDIR)/libdvm_interp.a
 $(BUILDDIR)/libdvm_interp.a: $(LIB_OBJ)
 	ar rcs $@ $^
 
-# Smoke binary (links libdvm_interp + smoke.cpp)
-$(SMOKE): $(SMOKE_SRC) $(BUILDDIR)/libdvm_interp.a | $(BINDIR)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $< -L$(BUILDDIR) -ldvm_interp -o $@ $(LDFLAGS)
+# Smoke binary (links libdvm_interp + libdgwcore + smoke.cpp)
+$(SMOKE): $(SMOKE_SRC) $(BUILDDIR)/libdvm_interp.a ../../compiler/dgw-core/build/libdgwcore.a | $(BINDIR)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) $< -L$(BUILDDIR) -ldvm_interp -L../../compiler/dgw-core/build -ldgwcore -o $@ $(LDFLAGS)
 
 # Run smoke binary
 test: all

@@ -25,6 +25,9 @@ struct ObjStorage;
 // ---- Forward declaration for the trace recorder ------------------------
 class TraceRecorder;
 
+// ---- Forward declaration for the hotness tracker -----------------------
+class HotnessTracker;
+
 // ---- Call frame ----------------------------------------------------------
 // A frame holds the function being executed, the register file, and the
 // return PC (where to resume after RET). The register file is per-frame
@@ -73,6 +76,15 @@ struct InterpState {
   // calls record() on every executed instruction and branch handlers
   // call mark_exit() / mark_loop_close().
   TraceRecorder* recorder{nullptr};
+
+  // Optional hotness tracker. When non-null, backward branches are
+  // counted; when a counter reaches the threshold, the tracker signals
+  // that recording should start at the branch target (the loop header).
+  HotnessTracker* hotness{nullptr};
+
+  // The function ID of the currently executing function (for the
+  // hotness tracker to pass to recorder->start()).
+  std::uint32_t current_function_id{0};
 
   // ---- Frame helpers -----------------------------------------------------
   // Push a new frame for `fn`. The frame's register file is sized to
