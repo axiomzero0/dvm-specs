@@ -96,20 +96,27 @@ NativeTrace compile_to_native(const dgw::Graph& graph) {
         break;
 
       case NodeKind::CONST: {
-        // Get the constant value from the graph's const payload.
-        std::uint32_t pidx = arena.node_payload_idx[n];
-        if (pidx < arena.consts.size()) {
-          const auto& cp = arena.consts[pidx];
-          if (std::holds_alternative<std::int64_t>(cp.value)) {
-            Reg r = ra.alloc(n);
-            encode_mov_imm64(buf, r, std::get<std::int64_t>(cp.value));
-          } else if (std::holds_alternative<double>(cp.value)) {
-            // For doubles, store the raw bits as an int64
-            double d = std::get<double>(cp.value);
-            std::int64_t raw;
-            std::memcpy(&raw, &d, sizeof(raw));
-            Reg r = ra.alloc(n);
-            encode_mov_imm64(buf, r, raw);
+        // The first few CONST nodes (after START) are the entry-register
+        // initial values. These are passed as function arguments (rdi,
+        // rsi, rdx, rcx) and should NOT be overwritten with mov imm64 —
+        // the caller provides the actual values.
+        // We allocate a register for the CONST but only emit mov imm64
+        // for non-entry constants (i.e., constants created inside the
+        // trace body, not from the entry register snapshot).
+        Reg r = ra.alloc(n);
+        // The entry registers are the first 4 CONST nodes (after START).
+        // If this CONST is one of the first 4, skip the mov imm64 — the
+        // function argument already has the value.
+        // Heuristic: if the CONST's allocated register is one of the
+        // argument registers (rdi-rsi-rdx-rcx), skip the mov imm64.
+        if (r != Reg::RDI && r != Reg::RSI && r != Reg::RDX && r != Reg::RCX) {
+          // Non-entry constant: emit the actual value.
+          std::uint32_t pidx = arena.node_payload_idx[n];
+          if (pidx < arena.consts.size()) {
+            const auto& cp = arena.consts[pidx];
+            if (std::holds_alternative<std::int64_t>(cp.value)) {
+              encode_mov_imm64(buf, r, std::get<std::int64_t>(cp.value));
+            }
           }
         }
         break;

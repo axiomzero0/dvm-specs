@@ -52,7 +52,7 @@ struct RegMap {
 };
 
 // ---- The main lifter ----------------------------------------------------
-dgw::Graph* lift_trace(const TraceFragment& frag) {
+dgw::Graph* lift_trace(const TraceFragment& frag, const crb::Module* module) {
   auto* graph = new Graph();
   Weaver& w = graph->weaver();
 
@@ -96,10 +96,27 @@ dgw::Graph* lift_trace(const TraceFragment& frag) {
 
     // ---- §10 Move/constant opcodes --------------------------------------
     if (op_val == crb_op::MOV_CONST) {
-      // dst = const(pool_idx). We don't have the constant pool here, so
-      // we create a CONST node with a placeholder value. A full lifter
-      // would look up the constant from the module's pool.
-      NodeId n = w.create_const(static_cast<std::int64_t>(0));
+      // Look up the actual constant value from the module's constant pool.
+      std::int64_t const_val = 0;
+      if (module) {
+        std::uint32_t const_idx = InstrCell::imm32(cell.s2(), cell.s3());
+        if (const_idx < module->constants.size()) {
+          const auto& ce = module->constants[const_idx];
+          using CK = crb::ConstantKind;
+          auto kind = static_cast<CK>(ce.kind);
+          if (kind == CK::I64 || kind == CK::I32 || kind == CK::I16 || kind == CK::I8 ||
+              kind == CK::U64 || kind == CK::U32 || kind == CK::U16 || kind == CK::U8 ||
+              kind == CK::Bool) {
+            const_val = static_cast<std::int64_t>(ce.payload_lo);
+          } else if (kind == CK::F64 || kind == CK::F32) {
+            // Reinterpret the payload as a double, then cast to int64.
+            double d;
+            std::memcpy(&d, &ce.payload_lo, sizeof(d));
+            const_val = static_cast<std::int64_t>(d);
+          }
+        }
+      }
+      NodeId n = w.create_const(const_val);
       regmap.write(cell.s1(), n);
     }
     // ---- §11 Integer arithmetic ----------------------------------------

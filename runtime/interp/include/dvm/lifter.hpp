@@ -40,7 +40,7 @@ namespace dvm {
 //   - A STATE node for loop traces (the backedge)
 //   - A RETURN node for the exit
 //   - A GUARD node for the side-exit condition (if applicable)
-dgw::Graph* lift_trace(const TraceFragment& frag);
+dgw::Graph* lift_trace(const TraceFragment& frag, const crb::Module* module = nullptr);
 
 // Pretty-print the lifted graph for debugging.
 void print_lifted_graph(const dgw::Graph& g);
