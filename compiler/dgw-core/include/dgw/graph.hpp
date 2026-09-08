@@ -20,6 +20,7 @@
 #include "dgw/pass_dce.hpp"
 #include "dgw/pass_licm.hpp"
 #include "dgw/pass_cleanup.hpp"
+#include "dgw/pass_constfold.hpp"
 #include "dgw/scheduler.hpp"
 #include "dgw/util.hpp"
 
@@ -60,6 +61,7 @@ class Graph {
     GvnStats gvn;
     DceStats dce;
     CleanupStats cleanup;
+    ConstFoldStats constfold;
     VerifyReport post_verify;
   };
   OptStats optimize_default();

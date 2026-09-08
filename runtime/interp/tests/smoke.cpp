@@ -718,6 +718,7 @@ int main() {
         CompiledTrace ct = compile_trace(graph);
         const auto& s = ct.stats;
 
+        std::println("  ConstFold: folded={}, simplified={}", s.constfold.folded, s.constfold.simplified);
         std::println("  GVN: eliminated={}, visited={}", s.gvn.eliminated, s.gvn.visited);
         std::println("  DCE: killed={}, live={}", s.dce.killed, s.dce.live);
         std::println("  Graph: {}→{} nodes, {}→{} edges",
@@ -958,6 +959,112 @@ int main() {
 #else
   std::println("\n-- Test 10: SKIPPED (JIT + ASan incompatible) --");
 #endif
+
+  // ---- Test 11: constant folding in the trace compiler ---------------
+  // Tests that the constant folding pass correctly folds arithmetic
+  // on CONST nodes in a NON-LOOP trace (side exit). Loop traces are
+  // skipped because the lifter represents loop-variant registers as
+  // CONST from the entry snapshot, which would be incorrect to fold.
+  //
+  // The Test 5 trace records from PC=0 (function entry) through PC=5
+  // (BR_TRUE side exit). The MOV_CONSTs create CONST(0), CONST(1),
+  // CONST(10). Then ADD(CONST(0), CONST(1)) → should fold to CONST(1).
+  // And CMP_LT(CONST(1), CONST(10)) → should fold to CONST(true).
+  std::println("\n-- Test 11: constant folding pass (non-loop trace) --");
+  {
+    // Re-run the Test 5 module (counting loop, manual recording from PC=0).
+    ModuleBuilder b11;
+    InstrCell code11[7] = {
+      cell(op::MOV_CONST,    0, 0, 0),
+      cell(op::MOV_CONST,    1, 1, 0),
+      cell(op::MOV_CONST,    2, 2, 0),
+      cell(op::ADD_I64_WRAP, 0, 0, 1),
+      cell(op::CMP_LT_S,     3, 0, 2),
+      cell(op::BR_TRUE,      3, 0xFFFD, 0xFFFF),
+      cell(op::RET,          0),
+    };
+    std::size_t code_sz11 = sizeof(code11);
+    ConstantEntry consts11[3] = { i64_const(0), i64_const(1), i64_const(10) };
+    std::size_t cp_sz11 = sizeof(consts11);
+    FunctionEntry fns11[1] = { make_fn(0, 0, static_cast<std::uint32_t>(code_sz11), 4) };
+    std::size_t ft_sz11 = sizeof(fns11);
+
+    std::size_t code_offset11 = 136;
+    std::size_t cp_offset11 = code_offset11 + code_sz11;
+    std::size_t ft_offset11 = cp_offset11 + cp_sz11;
+
+    for (std::size_t i = 0; i < 88; ++i) b11.emit_u8(0);
+    b11.emit_u32(static_cast<std::uint32_t>(SectionType::Code));
+    b11.emit_u32(static_cast<std::uint32_t>(code_offset11));
+    b11.emit_u32(static_cast<std::uint32_t>(code_sz11));
+    b11.emit_u32(0);
+    b11.emit_u32(static_cast<std::uint32_t>(SectionType::ConstantPool));
+    b11.emit_u32(static_cast<std::uint32_t>(cp_offset11));
+    b11.emit_u32(static_cast<std::uint32_t>(cp_sz11));
+    b11.emit_u32(0);
+    b11.emit_u32(static_cast<std::uint32_t>(SectionType::FunctionTable));
+    b11.emit_u32(static_cast<std::uint32_t>(ft_offset11));
+    b11.emit_u32(static_cast<std::uint32_t>(ft_sz11));
+    b11.emit_u32(0);
+    b11.emit_bytes(code11, code_sz11);
+    b11.emit_bytes(consts11, cp_sz11);
+    b11.emit_bytes(fns11, ft_sz11);
+    b11.write_header(3, 88);
+
+    auto raw11 = b11.raw;
+    auto lr11 = load_module(raw11);
+    if (!lr11.ok) {
+      std::println("FAIL: load_module test 11: {}", lr11.error);
+      return 1;
+    }
+
+    // Record with manual start (not hotness-triggered) so the trace
+    // starts at PC=0 and is a side-exit trace (not a loop).
+    TraceRecorder recorder11;
+    Value result11 = interpret(lr11.module, 0, &recorder11);
+    (void)result11;
+
+    TraceFragment frag11 = recorder11.stop();
+    std::println("  Trace: {} instructions, exit={}, loop={}",
+                 frag11.length(), static_cast<int>(frag11.exit_reason),
+                 frag11.is_loop() ? "yes" : "no");
+
+    dgw::Graph* graph11 = lift_trace(frag11, &lr11.module);
+    if (!graph11) {
+      std::println("FAIL: lift_trace returned nullptr");
+      return 1;
+    }
+
+    CompiledTrace ct11 = compile_trace(graph11);
+    const auto& s11 = ct11.stats;
+
+    std::println("  ConstFold: folded={}, simplified={}, visited={}",
+                 s11.constfold.folded, s11.constfold.simplified,
+                 s11.constfold.visited);
+    std::println("  DCE: killed={}, live={}", s11.dce.killed, s11.dce.live);
+    std::println("  Graph: {}→{} nodes", s11.nodes_before, s11.nodes_after);
+    std::println("  Verifier: ok={}", s11.verifier_ok);
+
+    // The trace has MOV_CONST(0), MOV_CONST(1), MOV_CONST(10) →
+    // CONST(0), CONST(1), CONST(10). Then ADD(CONST(0), CONST(1)) →
+    // should fold to CONST(1). And CMP_LT(CONST(1), CONST(10)) →
+    // should fold to CONST(1) = true.
+    // ConstFold should fold at least 2 operations (ADD + CMP_LT).
+    if (s11.constfold.folded < 1) {
+      std::println("FAIL: expected at least 1 folded operation, got {}",
+                   s11.constfold.folded);
+      return 1;
+    }
+
+    // The verifier must still pass.
+    if (!s11.verifier_ok) {
+      std::println("FAIL: verifier failed after constant folding");
+      return 1;
+    }
+
+    std::println("Test 11: constant folding: {} operations folded, "
+                 "verifier ok (PASS)", s11.constfold.folded);
+  }
 
   std::println("\n== DVM Interpreter smoke test PASSED ==");
   return 0;

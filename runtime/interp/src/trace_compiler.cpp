@@ -39,12 +39,12 @@ CompiledTrace compile_trace(dgw::Graph* graph,
   ct.stats.nodes_before = arena.node_count();
   ct.stats.edges_before = arena.edge_count();
 
-  // ---- Step 1-3: Run optimization passes (GVN + DCE + Cleanup) -----------
-  // Graph::optimize_default() runs all three passes and verifies after.
+  // ---- Step 1-4: Run optimization passes (ConstFold → GVN → DCE → Cleanup) -
   auto opt_stats = ct.graph->optimize_default();
-  ct.stats.gvn     = opt_stats.gvn;
-  ct.stats.dce     = opt_stats.dce;
-  ct.stats.cleanup = opt_stats.cleanup;
+  ct.stats.constfold = opt_stats.constfold;
+  ct.stats.gvn       = opt_stats.gvn;
+  ct.stats.dce       = opt_stats.dce;
+  ct.stats.cleanup   = opt_stats.cleanup;
 
   // Record post-optimization graph size.
   ct.stats.nodes_after = arena.node_count();
@@ -73,6 +73,8 @@ CompiledTrace compile_trace(dgw::Graph* graph,
 void print_compiled_trace(const CompiledTrace& ct) {
   const auto& s = ct.stats;
   std::println("CompiledTrace:");
+  std::println("  ConstFold: folded={}, simplified={}, visited={}",
+               s.constfold.folded, s.constfold.simplified, s.constfold.visited);
   std::println("  GVN: eliminated={}, visited={}", s.gvn.eliminated, s.gvn.visited);
   std::println("  DCE: killed={}, live={}", s.dce.killed, s.dce.live);
   std::println("  Cleanup: collapsed={}, killed={}", s.cleanup.collapsed, s.cleanup.killed);

@@ -35,10 +35,10 @@ namespace dvm {
 
 // ---- Optimization stats from the trace compiler -------------------------
 struct TraceCompileStats {
-  // From the DGW-Core optimization passes
-  dgw::GvnStats     gvn;
-  dgw::DceStats      dce;
-  dgw::CleanupStats  cleanup;
+  dgw::GvnStats       gvn;
+  dgw::DceStats        dce;
+  dgw::CleanupStats    cleanup;
+  dgw::ConstFoldStats  constfold;
 
   // Graph size before and after optimization
   std::uint32_t nodes_before{0};
