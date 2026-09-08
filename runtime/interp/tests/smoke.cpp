@@ -34,6 +34,7 @@
 #include "dvm/trace.hpp"
 #include "dvm/hotness.hpp"
 #include "dvm/lifter.hpp"
+#include "dvm/trace_compiler.hpp"
 
 #include "dgw/graph.hpp"
 #include "dgw/kinds.hpp"
@@ -702,7 +703,59 @@ int main() {
       }
       std::println("Test 7: lifted graph has {} nodes, {} edges, ADD+CMP present (PASS)",
                    arena.node_count(), arena.edge_count());
-      delete graph;
+
+      // ---- Test 8: compile the lifted trace (optimize + schedule) -------
+      // Takes the Test 7 lifted graph and compiles it:
+      //   1. Run GVN (eliminate duplicate computations)
+      //   2. Run DCE (remove dead nodes)
+      //   3. Run Cleanup (collapse FWD chains)
+      //   4. Schedule to MachineCFG (form basic blocks)
+      //   5. Verify the optimized graph
+      std::println("\n-- Test 8: compile trace (GVN + DCE + Cleanup + Schedule) --");
+      {
+        CompiledTrace ct = compile_trace(graph);
+        const auto& s = ct.stats;
+
+        std::println("  GVN: eliminated={}, visited={}", s.gvn.eliminated, s.gvn.visited);
+        std::println("  DCE: killed={}, live={}", s.dce.killed, s.dce.live);
+        std::println("  Graph: {}→{} nodes, {}→{} edges",
+                     s.nodes_before, s.nodes_after,
+                     s.edges_before, s.edges_after);
+        std::println("  Scheduled: {} blocks, {} ops", s.blocks, s.ops);
+        std::println("  Verifier: ok={} pass={} fail={}",
+                     s.verifier_ok, s.verifier_pass, s.verifier_fail);
+
+        // Verify the compiler ran successfully:
+        // 1. Verifier must pass on the optimized graph
+        if (!s.verifier_ok) {
+          std::println("FAIL: verifier reports failures after optimization");
+          return 1;
+        }
+        // 2. DCE should have killed at least 0 nodes (the graph may be fully live)
+        if (s.dce.killed > s.nodes_before) {
+          std::println("FAIL: DCE killed more nodes than existed");
+          return 1;
+        }
+        // 3. The scheduled MachineCFG should have at least 1 block
+        if (s.blocks < 1) {
+          std::println("FAIL: scheduler produced 0 blocks");
+          return 1;
+        }
+        // 4. The MachineCFG should have at least 1 op
+        if (s.ops < 1) {
+          std::println("FAIL: scheduler produced 0 ops");
+          return 1;
+        }
+
+        std::println("Test 8: compiled trace: {}→{} nodes, {} blocks, {} ops, "
+                     "verifier ok (PASS)",
+                     s.nodes_before, s.nodes_after, s.blocks, s.ops);
+
+        // Print the compiled trace.
+        print_compiled_trace(ct);
+      }
+
+      // graph is now owned by CompiledTrace (via unique_ptr) — do NOT delete.
     }
   }
 

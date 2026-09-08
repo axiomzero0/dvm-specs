@@ -180,9 +180,16 @@ dgw::Graph* lift_trace(const TraceFragment& frag) {
         // This is the backedge — create a STATE node (loop header) + BRANCH.
         NodeId state = w.create_state();
         w.connect_value(cond, state, dgw::PortId{0});
-        // The loop continues: connect state's output back to the trace head.
-        // (A full implementation would connect to the first node of the trace.)
+        // The loop continues on the true path (backedge).
+        // The false path is the side exit — connect to a DEOPT_TRAP so
+        // DCE keeps the loop body alive (DEOPT_TRAP is observable).
         NodeId br = w.create_branch(ctrl, cond);
+        NodeId trap = w.create_deopt_trap();
+        // Connect BRANCH's false output (port in_count+1) to DEOPT_TRAP.
+        const dgw::NodeSignature bs = dgw::signature_of(dgw::NodeKind::BRANCH);
+        const std::uint16_t b_in = static_cast<std::uint16_t>(bs.inputs.size());
+        w.connect(br, dgw::PortId{static_cast<std::uint16_t>(b_in + 1)},
+                   trap, dgw::PortId{0}, dgw::EdgeKind::CONTROL);
         ctrl = br;
       } else {
         // Side exit: create a GUARD + DEOPT_TRAP.
