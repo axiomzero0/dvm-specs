@@ -35,6 +35,7 @@
 #include "dvm/hotness.hpp"
 #include "dvm/lifter.hpp"
 #include "dvm/trace_compiler.hpp"
+#include "dvm/native_codegen.hpp"
 
 #include "dgw/graph.hpp"
 #include "dgw/kinds.hpp"
@@ -753,6 +754,71 @@ int main() {
 
         // Print the compiled trace.
         print_compiled_trace(ct);
+
+        // ---- Test 9: compile to native x86-64 and execute ---------------
+        // Takes the compiled trace's MachineCFG and generates native
+        // x86-64 machine code. The compiled function is called with the
+        // trace's entry register values as arguments, and the result
+        // should match the interpreter's result.
+        std::println("\n-- Test 9: native x86-64 code generation + execution --");
+        {
+          std::println("  Compiling to native..."); std::fflush(stdout);
+          NativeTrace nt = compile_to_native(*ct.graph);
+
+          std::println("  Native code: {} bytes", nt.code_size());
+          print_native_trace(nt);
+
+          // The trace's entry registers from the fragment:
+          //   r0 = 0 (counter, but the hot-loop trace starts at PC=3
+          //           where r0 has already been incremented a few times)
+          //   r1 = 1 (increment)
+          //   r2 = 10 (limit)
+          //   r3 = 0 (cmp result, initially 0)
+          //
+          // The compiled loop executes: r0 += r1; while (r0 < r2) loop.
+          // Starting from the trace entry's register snapshot, the loop
+          // runs until r0 >= r2 (=10), then falls through to the DEOPT_TRAP.
+          //
+          // Since the compiled code maps r0→rdi, r1→rsi, r2→rdx, r3→rcx,
+          // we pass the entry register values as arguments.
+          //
+          // The trace was recorded when the loop was already hot (after
+          // 3 backedges), so r0 was already 3 at recording time. The
+          // entry_registers snapshot captures the state at that point.
+          // For the native call, we pass the snapshot values.
+          std::int64_t r0 = frag.entry_registers.size() > 0
+                              ? frag.entry_registers[0].as_i64() : 0;
+          std::int64_t r1 = frag.entry_registers.size() > 1
+                              ? frag.entry_registers[1].as_i64() : 1;
+          std::int64_t r2 = frag.entry_registers.size() > 2
+                              ? frag.entry_registers[2].as_i64() : 10;
+          std::int64_t r3 = frag.entry_registers.size() > 3
+                              ? frag.entry_registers[3].as_i64() : 0;
+
+          std::println("  Entry regs: r0={}, r1={}, r2={}, r3={}", r0, r1, r2, r3);
+
+          // Call the native function.
+          std::fflush(stdout);
+          std::int64_t native_result = nt.entry(r0, r1, r2, r3);
+          std::println("  Native result: {}", native_result);
+
+          // The native code should produce the same result as the
+          // interpreter. The interpreter counted to 10 (Test 3 result).
+          // The native code should also count to 10 when run from the
+          // same starting state.
+          //
+          // The trace's entry_registers captures the state at the
+          // recording start point (PC=3, after 3 backedges). At that
+          // point, r0 = 3 (it's been incremented 3 times: 0→1→2→3).
+          // The loop continues: 3→4→5→6→7→8→9→10 (then exits).
+          // So the native result should be 10.
+          if (native_result != 10) {
+            std::println("FAIL: native result is {} (expected 10)", native_result);
+            return 1;
+          }
+          std::println("Test 9: native x86-64 code executed, result = {} (PASS)",
+                       native_result);
+        }
       }
 
       // graph is now owned by CompiledTrace (via unique_ptr) — do NOT delete.
