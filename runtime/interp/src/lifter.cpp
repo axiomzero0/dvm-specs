@@ -267,7 +267,7 @@ dgw::Graph* lift_trace(const TraceFragment& frag, const crb::Module* module) {
       regmap.write(cell.s1(), n);
     }
     else if (op_val == crb_op::OBJ_GET) {
-      (void)regmap.read(cell.s2()); // obj (unused in minimal lifter)
+      
       // Minimal: OBJ_GET becomes a LOAD. A full lifter would create
       // a REF + LOAD from the object's region.
       NodeId ref = w.create_ref(dgw::RegionId{0}, cell.s3(),
@@ -278,7 +278,7 @@ dgw::Graph* lift_trace(const TraceFragment& frag, const crb::Module* module) {
       regmap.write(cell.s1(), load);
     }
     else if (op_val == crb_op::OBJ_SET) {
-      (void)regmap.read(cell.s1()); // obj (unused in minimal lifter)
+      
       NodeId val = regmap.read(cell.s3());
       NodeId ref = w.create_ref(dgw::RegionId{0}, cell.s2(),
                                   dgw::AccessPerm::ReadWrite);

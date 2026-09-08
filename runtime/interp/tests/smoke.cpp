@@ -855,12 +855,12 @@ int main() {
     std::size_t code_sz10 = sizeof(code10);
     ConstantEntry consts10[3] = { i64_const(0), i64_const(1), i64_const(10) };
     std::size_t cp_sz10 = sizeof(consts10);
-    FunctionEntry fns10[1] = { make_fn(0, 0, static_cast<std::uint32_t>(code_sz10), 4) }; (void)fns10;
-    std::size_t ft_sz10 = sizeof(fns10); (void)ft_sz10;
+    FunctionEntry fns10[1] = { make_fn(0, 0, static_cast<std::uint32_t>(code_sz10), 4) };
+    std::size_t ft_sz10 = sizeof(fns10);
 
     std::size_t code_offset10 = 136;
     std::size_t cp_offset10 = code_offset10 + code_sz10;
-    std::size_t ft_offset10 = cp_offset10 + cp_sz10; (void)ft_offset10;
+    std::size_t ft_offset10 = cp_offset10 + cp_sz10;
 
     for (std::size_t i = 0; i < 88; ++i) b10.emit_u8(0);
     b10.emit_u32(static_cast<std::uint32_t>(SectionType::Code));
@@ -868,19 +868,19 @@ int main() {
     b10.emit_u32(static_cast<std::uint32_t>(code_sz10));
     b10.emit_u32(0);
     b10.emit_u32(static_cast<std::uint32_t>(SectionType::ConstantPool));
-    b.emit_u32(static_cast<std::uint32_t>(cp_offset));
-    b.emit_u32(static_cast<std::uint32_t>(cp_sz));
-    b.emit_u32(0);
-    b.emit_u32(static_cast<std::uint32_t>(SectionType::FunctionTable));
-    b.emit_u32(static_cast<std::uint32_t>(ft_offset));
-    b.emit_u32(static_cast<std::uint32_t>(ft_sz));
-    b.emit_u32(0);
-    b.emit_bytes(code, code_sz);
-    b.emit_bytes(consts, cp_sz);
-    b.emit_bytes(fns, ft_sz);
-    b.write_header(3, 88);
+    b10.emit_u32(static_cast<std::uint32_t>(cp_offset10));
+    b10.emit_u32(static_cast<std::uint32_t>(cp_sz10));
+    b10.emit_u32(0);
+    b10.emit_u32(static_cast<std::uint32_t>(SectionType::FunctionTable));
+    b10.emit_u32(static_cast<std::uint32_t>(ft_offset10));
+    b10.emit_u32(static_cast<std::uint32_t>(ft_sz10));
+    b10.emit_u32(0);
+    b10.emit_bytes(code10, code_sz10);
+    b10.emit_bytes(consts10, cp_sz10);
+    b10.emit_bytes(fns10, ft_sz10);
+    b10.write_header(3, 88);
 
-    auto raw10 = b.raw;
+    auto raw10 = b10.raw;
     auto lr10 = load_module(raw10);
     if (!lr10.ok) {
       std::println("FAIL: load_module test 10: {}", lr10.error);
@@ -924,8 +924,8 @@ int main() {
     cache.store(0, 3, std::move(frag10), std::move(ct), std::move(nt));
     std::println("  Cached: {} traces in cache", cache.size());
 
-    // ---- 2nd run: cache hit → call native code --------------------------
-    std::println("  Run 2: cache hit → calling native code...");
+    // ---- 2nd run: cache hit → call native code10 --------------------------
+    std::println("  Run 2: cache hit → calling native code10...");
     std::int64_t native_result = cache.call_native(0, 3, 3, 1, 10, 1);
     std::println("  Run 2: native result = {}", native_result);
 
