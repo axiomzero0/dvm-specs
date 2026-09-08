@@ -22,6 +22,7 @@ compliance. There are no exceptions.
 | 4 | [DGW-Core IR (Dynamic Graph Web)](docs/DGW-Core-IR.md) | Tier 2 / Tier 3 Optimizing IR | Stable |
 | 5 | [DVM-CRB — Common Register Bytecode](docs/DVM-CRB.md) | Tier 0 Interpreter / Deopt Target | Draft |
 | 6 | [DVM-CR-PEA — Cross-Region Partial Escape Analysis](docs/DVM-CR-PEA.md) | Tier 2 / Tier 3 Pass Pipeline | Draft |
+| 7 | [DVM-Performance-Priorities](docs/DVM-Performance-Priorities.md) | Cross-cutting / Performance Strategy | Draft |
 
 ### Document Dependency Order
 
@@ -49,6 +50,11 @@ If you are reading these specs for the first time, the recommended order is:
    evolution of PEA that virtualizes allocations across inlined call
    boundaries with lazy materialization. Depends on DGW-Core's first-class
    `Region`/`Ref` model (Part 3) and the deopt machinery.
+7. **DVM-Performance-Priorities** — the performance engineering strategy
+   that defines how the VM should disappear from hot code. Covers
+   inlining, specialization, scalar replacement, range analysis,
+   vectorization, register allocation, and the target architecture
+   from CRB to native code.
 
 ---
 
