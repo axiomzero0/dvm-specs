@@ -33,7 +33,11 @@ using dgw::PortId;
 using dgw::EdgeKind;
 
 namespace {
-
+// Trivial register allocator: assigns the first 4 DGW nodes to System V
+// argument registers (rdi/rsi/rdx/rcx), extras to r8-r11, overflow to rax.
+// Uses in-place update for arithmetic ops (result → src0's register).
+// This is replaced by LinearScanAllocator (reg_alloc.hpp) for future use
+// once the lifter properly models STATE backedges in loop traces.
 struct RegAllocator {
   static constexpr Reg arg_regs[] = {Reg::RDI, Reg::RSI, Reg::RDX, Reg::RCX};
   static constexpr Reg extra_regs[] = {Reg::R8, Reg::R9, Reg::R10, Reg::R11};
@@ -63,7 +67,6 @@ struct RegAllocator {
     return map.find(node_id) != map.end();
   }
 };
-
 }  // namespace
 
 NativeTrace compile_to_native(const dgw::Graph& graph) {
@@ -96,21 +99,12 @@ NativeTrace compile_to_native(const dgw::Graph& graph) {
         break;
 
       case NodeKind::CONST: {
-        // The first few CONST nodes (after START) are the entry-register
-        // initial values. These are passed as function arguments (rdi,
-        // rsi, rdx, rcx) and should NOT be overwritten with mov imm64 —
-        // the caller provides the actual values.
-        // We allocate a register for the CONST but only emit mov imm64
-        // for non-entry constants (i.e., constants created inside the
-        // trace body, not from the entry register snapshot).
+        // The linear-scan allocator assigns entry-arg CONSTs to the
+        // System V argument registers (rdi/rsi/rdx/rcx). Skip mov imm64
+        // for those — the caller provides the values.
+        // Non-entry CONSTs (created inside the trace) get mov imm64.
         Reg r = ra.alloc(n);
-        // The entry registers are the first 4 CONST nodes (after START).
-        // If this CONST is one of the first 4, skip the mov imm64 — the
-        // function argument already has the value.
-        // Heuristic: if the CONST's allocated register is one of the
-        // argument registers (rdi-rsi-rdx-rcx), skip the mov imm64.
         if (r != Reg::RDI && r != Reg::RSI && r != Reg::RDX && r != Reg::RCX) {
-          // Non-entry constant: emit the actual value.
           std::uint32_t pidx = arena.node_payload_idx[n];
           if (pidx < arena.consts.size()) {
             const auto& cp = arena.consts[pidx];
@@ -125,22 +119,22 @@ NativeTrace compile_to_native(const dgw::Graph& graph) {
       case NodeKind::ADD:
       case NodeKind::SUB:
       case NodeKind::MUL: {
-        // Record the loop start BEFORE emitting the first value op.
         if (loop_start_offset == 0) {
           loop_start_offset = buf.offset();
         }
-        // Read the two VALUE inputs from the weaver.
         NodeId src0 = w.input_node(NodeId{n}, PortId{0});
         NodeId src1 = w.input_node(NodeId{n}, PortId{1});
-        // The result goes into the SAME register as src0 (in-place update).
-        // This matches the CRB register machine semantics (r0 = r0 + r1).
-        Reg dst = ra.has(src0.value) ? ra.get(src0.value) : ra.alloc(n);
-        if (!ra.has(n)) ra.map[n] = dst;
+        // Coalesce: the ADD writes in-place to src0's register (matches
+        // CRB register-machine semantics: r0 = r0 + r1). This is
+        // essential for loop traces where the ADD's output feeds back
+        // through the STATE node into the ADD's input on the next
+        // iteration. The linear-scan allocator assigns registers, but
+        // for arithmetic ops we override: result goes to src0's reg.
+        Reg dst = ra.has(src0.value) ? ra.get(src0.value) : ra.alloc(n); if (!ra.has(n)) ra.map[n] = dst;
         Reg r1 = ra.has(src1.value) ? ra.get(src1.value) : Reg::RSI;
-
         if (kind == NodeKind::ADD) encode_add_reg(buf, dst, r1);
         else if (kind == NodeKind::SUB) encode_sub_reg(buf, dst, r1);
-        else if (kind == NodeKind::MUL) encode_add_reg(buf, dst, r1); // placeholder
+        else if (kind == NodeKind::MUL) encode_add_reg(buf, dst, r1);
         break;
       }
 
