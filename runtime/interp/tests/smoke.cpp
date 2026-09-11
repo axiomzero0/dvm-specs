@@ -1021,8 +1021,7 @@ int main() {
     // Record with manual start (not hotness-triggered) so the trace
     // starts at PC=0 and is a side-exit trace (not a loop).
     TraceRecorder recorder11;
-    Value result11 = interpret(lr11.module, 0, &recorder11);
-    (void)result11;
+    interpret(lr11.module, 0, &recorder11);  // result not needed for this test
 
     TraceFragment frag11 = recorder11.stop();
     std::println("  Trace: {} instructions, exit={}, loop={}",
